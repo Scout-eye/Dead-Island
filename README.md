@@ -20,7 +20,7 @@ dans l'esprit de *Peak* (grimpe physique) × *Galerapagos* (tension sociale). Pr
 | (Assembly-CSharp-Editor) | `Assets/Editor/` | Outil d'ajout d'eau |
 
 **Scripts clés**
-- Joueur : `PlayerBody` (Rigidbody en forces, sol/pentes/saut), `PlayerCamera` (yaw corps / pitch tête découplés, head-bob, lean), `PlayerHands` (IK 2 bras + grip `ConfigurableJoint` + stamina), `PlayerProceduralAnimator` (jambes IK à pas plantés, pose aérienne, look buste, balancement des bras), `PlayerInputReader` (New Input System en code), `PlayerState` (snapshot réseau sérialisable), `RemotePlayer` (interpolation), `TwoBoneIK`.
+- Joueur : `PlayerBody` (Rigidbody en forces, sol/pentes/saut), `PlayerCamera` (yaw corps / pitch tête découplés, head-bob, lean), `PlayerHands` (IK 2 bras vers la pose de repos + balancement de marche), `PlayerProceduralAnimator` (jambes IK à pas plantés, pose aérienne, look buste, balancement des bras), `PlayerInputReader` (New Input System en code), `PlayerState` (snapshot réseau sérialisable), `RemotePlayer` (interpolation), `TwoBoneIK`.
 - Réseau : `SteamManager`, `LobbyManager` (seed/joueurs dans les métadonnées), `NetworkManager` (sockets relais, 20 Hz, relais en étoile, spawn), `MainMenu` (Créer / Chercher / Salle d'attente, généré par code).
 - Monde : `IslandGenerator` (île en 3 étapes : forme & côte par distance radiale bruitée, altitude pondérée par la distance à la côte), `WaterPlane`, `WorldSpawner` (île + eau + spawn sur la plage).
 
@@ -40,7 +40,7 @@ dans l'esprit de *Peak* (grimpe physique) × *Galerapagos* (tension sociale). Pr
 - `IslandGenerator` (composant) : clic droit ▸ **Régénérer (test)** pour visualiser une île.
 
 ### Contrôles
-ZQSD/WASD déplacement · Souris regarder · **Shift** courir · **Espace** sauter · **Clic G/D** s'agripper.
+ZQSD/WASD déplacement · Souris regarder · **Shift** courir · **Espace** sauter.
 
 ### Tester le multijoueur
 Le P2P passe par le client Steam. Pour jouer à deux : **2 machines, 2 comptes Steam différents**

@@ -90,7 +90,7 @@ namespace Game.Player
             if (_camera != null)
                 _camera.SetNetworkLook(s.Yaw, s.Pitch); // pas de head-yaw indépendant synchronisé pour l'instant
             if (_hands != null)
-                _hands.SetNetworkHands(s.LeftHandTarget, s.RightHandTarget, s.LeftGripping, s.RightGripping, s.Stamina);
+                _hands.SetNetworkHands(s.LeftHandTarget, s.RightHandTarget);
         }
 
         private static PlayerState Interpolate(PlayerState a, PlayerState b, float t)
@@ -103,10 +103,7 @@ namespace Game.Player
                 Pitch = Mathf.LerpAngle(a.Pitch, b.Pitch, t),
                 Velocity = Vector3.Lerp(a.Velocity, b.Velocity, t),
                 LeftHandTarget = Vector3.Lerp(a.LeftHandTarget, b.LeftHandTarget, t),
-                RightHandTarget = Vector3.Lerp(a.RightHandTarget, b.RightHandTarget, t),
-                LeftGripping = b.LeftGripping,
-                RightGripping = b.RightGripping,
-                Stamina = Mathf.Lerp(a.Stamina, b.Stamina, t)
+                RightHandTarget = Vector3.Lerp(a.RightHandTarget, b.RightHandTarget, t)
             };
         }
 

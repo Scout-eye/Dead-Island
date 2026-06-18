@@ -19,16 +19,12 @@ namespace Game.Player
         private InputAction _look;
         private InputAction _jump;
         private InputAction _sprint;
-        private InputAction _leftGrip;
-        private InputAction _rightGrip;
 
         // --- Valeurs lues, exposées aux autres composants ---
         public Vector2 Move { get; private set; }
         public Vector2 Look { get; private set; }
         public bool JumpPressedThisFrame { get; private set; }
         public bool SprintHeld { get; private set; }
-        public bool LeftGripHeld { get; private set; }
-        public bool RightGripHeld { get; private set; }
 
         private void Awake()
         {
@@ -51,14 +47,6 @@ namespace Game.Player
             _sprint = new InputAction("Sprint", InputActionType.Button);
             _sprint.AddBinding("<Keyboard>/leftShift");
             _sprint.AddBinding("<Gamepad>/leftStickPress");
-
-            _leftGrip = new InputAction("LeftGrip", InputActionType.Button);
-            _leftGrip.AddBinding("<Mouse>/leftButton");
-            _leftGrip.AddBinding("<Gamepad>/leftTrigger");
-
-            _rightGrip = new InputAction("RightGrip", InputActionType.Button);
-            _rightGrip.AddBinding("<Mouse>/rightButton");
-            _rightGrip.AddBinding("<Gamepad>/rightTrigger");
         }
 
         private void OnEnable()
@@ -67,8 +55,6 @@ namespace Game.Player
             _look.Enable();
             _jump.Enable();
             _sprint.Enable();
-            _leftGrip.Enable();
-            _rightGrip.Enable();
         }
 
         private void OnDisable()
@@ -77,8 +63,6 @@ namespace Game.Player
             _look.Disable();
             _jump.Disable();
             _sprint.Disable();
-            _leftGrip.Disable();
-            _rightGrip.Disable();
         }
 
         private void Update()
@@ -87,8 +71,6 @@ namespace Game.Player
             Look = _look.ReadValue<Vector2>();
             JumpPressedThisFrame = _jump.WasPressedThisFrame();
             SprintHeld = _sprint.IsPressed();
-            LeftGripHeld = _leftGrip.IsPressed();
-            RightGripHeld = _rightGrip.IsPressed();
         }
 
         private void OnDestroy()
@@ -97,8 +79,6 @@ namespace Game.Player
             _look?.Dispose();
             _jump?.Dispose();
             _sprint?.Dispose();
-            _leftGrip?.Dispose();
-            _rightGrip?.Dispose();
         }
     }
 }

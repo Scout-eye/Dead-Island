@@ -221,15 +221,6 @@ MonoBehaviour:
   _rightUpperArm: {fileID: 8722944259712243868}
   _rightForeArm: {fileID: 709593676136837681}
   _rightHand: {fileID: 3746442468606113873}
-  _gripMask:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  _reach: 1.9
-  _gripStiffness: 8000
-  _gripDamping: 200
-  _lockGrip: 1
-  _staminaDrainPerGrip: 0.18
-  _staminaRecharge: 0.35
   _leftRestOffset: {x: -0.2, y: 1, z: 0.18}
   _rightRestOffset: {x: 0.2, y: 1, z: 0.18}
   _targetSmoothing: 14

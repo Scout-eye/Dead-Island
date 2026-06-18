@@ -142,10 +142,7 @@ namespace Game.Net
                 Pitch = _localCam != null ? _localCam.Pitch : 0f,
                 Velocity = _localBody.NetworkVelocity,
                 LeftHandTarget = _localHands != null ? _localHands.LeftHandTarget : Vector3.zero,
-                RightHandTarget = _localHands != null ? _localHands.RightHandTarget : Vector3.zero,
-                LeftGripping = _localHands != null && _localHands.LeftGripping,
-                RightGripping = _localHands != null && _localHands.RightGripping,
-                Stamina = _localHands != null ? _localHands.Stamina : 1f
+                RightHandTarget = _localHands != null ? _localHands.RightHandTarget : Vector3.zero
             };
         }
 

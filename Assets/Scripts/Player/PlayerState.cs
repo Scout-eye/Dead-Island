@@ -10,7 +10,7 @@ namespace Game.Player
     /// de sa simulation physique locale ; le remote le reçoit et interpole / rejoue l'IK.
     /// On ne synchronise jamais les forces ou les joints : uniquement le résultat (ce struct).
     ///
-    /// Sérialisé en binaire compact pour envoi via Steamworks (étape 2). Layout fixe = 66 octets.
+    /// Sérialisé en binaire compact pour envoi via Steamworks (étape 2). Layout fixe.
     /// </summary>
     [Serializable]
     public struct PlayerState
@@ -22,9 +22,6 @@ namespace Game.Player
         public Vector3 Velocity;      // vélocité linéaire, pour l'extrapolation côté remote
         public Vector3 LeftHandTarget;  // cible monde de la main gauche (IK)
         public Vector3 RightHandTarget; // cible monde de la main droite (IK)
-        public bool LeftGripping;
-        public bool RightGripping;
-        public float Stamina;         // 0..1
 
         /// <summary>Taille fixe en octets d'un state sérialisé.</summary>
         public const int Size = sizeof(uint)        // Tick
@@ -33,10 +30,7 @@ namespace Game.Player
                               + sizeof(float)        // Pitch
                               + sizeof(float) * 3    // Velocity
                               + sizeof(float) * 3    // LeftHandTarget
-                              + sizeof(float) * 3    // RightHandTarget
-                              + sizeof(byte)         // LeftGripping
-                              + sizeof(byte)         // RightGripping
-                              + sizeof(float);       // Stamina
+                              + sizeof(float) * 3;   // RightHandTarget
 
         public byte[] Serialize()
         {
@@ -56,9 +50,6 @@ namespace Game.Player
             o = Write(buffer, o, Velocity.x); o = Write(buffer, o, Velocity.y); o = Write(buffer, o, Velocity.z);
             o = Write(buffer, o, LeftHandTarget.x); o = Write(buffer, o, LeftHandTarget.y); o = Write(buffer, o, LeftHandTarget.z);
             o = Write(buffer, o, RightHandTarget.x); o = Write(buffer, o, RightHandTarget.y); o = Write(buffer, o, RightHandTarget.z);
-            buffer[o++] = (byte)(LeftGripping ? 1 : 0);
-            buffer[o++] = (byte)(RightGripping ? 1 : 0);
-            o = Write(buffer, o, Stamina);
             return o;
         }
 
@@ -73,9 +64,6 @@ namespace Game.Player
             s.Velocity = ReadVector3(buffer, ref o);
             s.LeftHandTarget = ReadVector3(buffer, ref o);
             s.RightHandTarget = ReadVector3(buffer, ref o);
-            s.LeftGripping = buffer[o++] != 0;
-            s.RightGripping = buffer[o++] != 0;
-            s.Stamina = BitConverter.ToSingle(buffer, o); o += sizeof(float);
             return s;
         }
 

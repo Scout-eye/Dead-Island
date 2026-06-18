@@ -22,7 +22,7 @@ namespace Game.Player.EditorTools
             if (player == null) return;
             Selection.activeGameObject = player;
             EditorGUIUtility.PingObject(player);
-            Debug.Log("[PlayerBuilder] Player construit dans la scène. Règle les LayerMask (GroundMask/GripMask).", player);
+            Debug.Log("[PlayerBuilder] Player construit dans la scène. Règle le LayerMask (GroundMask de PlayerBody).", player);
         }
 
         [MenuItem("Tools/Dead Island/Build Player Prefab (Resources)")]
