@@ -1,0 +1,354 @@
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using Game.Player;
+using Game.World;
+using Steamworks;
+using Steamworks.Data;
+using UnityEngine;
+
+namespace Game.Net
+{
+    /// <summary>
+    /// Transport P2P via SteamNetworkingSockets (relais Steam, connection-based — pas le vieux
+    /// SendP2PPacket déprécié). Le host ouvre une socket relais ; les clients s'y connectent.
+    ///
+    /// Format de message : [1 octet type][8 octets SteamId expéditeur][payload].
+    ///   type 0 = PlayerState (payload = PlayerState sérialisé).
+    /// Le host relaie les states reçus aux autres clients (topologie étoile). Envoi à 20 Hz.
+    /// </summary>
+    [DisallowMultipleComponent]
+    public sealed class NetworkManager : MonoBehaviour
+    {
+        private const int SendRate = 20;
+        private const string PlayerResource = "Player"; // Assets/Resources/Player.prefab
+
+        private enum MsgType : byte { PlayerState = 0, GameEvent = 1 }
+
+        public static NetworkManager Instance { get; private set; }
+
+        private GameSocket _socket;          // host
+        private GameConnection _connection;  // client
+        private bool _isHost;
+        private bool _running;
+
+        private GameObject _localPlayer;
+        private PlayerBody _localBody;
+        private PlayerCamera _localCam;
+        private PlayerHands _localHands;
+
+        private bool _worldBuilt;
+        private Vector3 _worldCenter;
+        private float _worldSize;
+
+        private readonly Dictionary<ulong, RemotePlayer> _remotes = new Dictionary<ulong, RemotePlayer>();
+        private readonly Dictionary<uint, ulong> _connToSteam = new Dictionary<uint, ulong>(); // host: connId -> steamId
+
+        private float _sendTimer;
+        private uint _tick;
+        private readonly byte[] _sendBuffer = new byte[1 + 8 + PlayerState.Size];
+
+        public static NetworkManager EnsureExists()
+        {
+            if (Instance != null) return Instance;
+            var go = new GameObject("[NetworkManager]");
+            return go.AddComponent<NetworkManager>();
+        }
+
+        private void Awake()
+        {
+            if (Instance != null && Instance != this) { Destroy(gameObject); return; }
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+        }
+
+        private void Start()
+        {
+            LobbyManager.EnsureExists().OnGameStart += HandleGameStart;
+        }
+
+        private void OnDestroy()
+        {
+            if (LobbyManager.Instance != null) LobbyManager.Instance.OnGameStart -= HandleGameStart;
+            if (Instance == this) ShutdownTransport();
+        }
+
+        private void HandleGameStart(SteamId hostId)
+        {
+            if (LobbyManager.Instance != null && LobbyManager.Instance.IsHost) StartHost();
+            else StartClient(hostId);
+        }
+
+        public void StartHost()
+        {
+            if (_running) return;
+            _isHost = true;
+            _socket = SteamNetworkingSockets.CreateRelaySocket<GameSocket>();
+            _socket.Net = this;
+            _running = true;
+            SpawnLocalPlayer();
+            Debug.Log("[Net] Host démarré (socket relais).");
+        }
+
+        public void StartClient(SteamId hostId)
+        {
+            if (_running) return;
+            _isHost = false;
+            _connection = SteamNetworkingSockets.ConnectRelay<GameConnection>(hostId);
+            _connection.Net = this;
+            _running = true;
+            SpawnLocalPlayer();
+            Debug.Log($"[Net] Client connecté au host {hostId}.");
+        }
+
+        private void Update()
+        {
+            if (!_running) return;
+
+            _socket?.Receive();
+            _connection?.Receive();
+
+            if (_localBody == null) return;
+            _sendTimer += Time.deltaTime;
+            if (_sendTimer >= 1f / SendRate)
+            {
+                _sendTimer = 0f;
+                SendLocalState();
+            }
+        }
+
+        // --- Envoi ---
+
+        private void SendLocalState()
+        {
+            var state = GatherLocalState();
+            int o = 0;
+            _sendBuffer[o++] = (byte)MsgType.PlayerState;
+            BitConverter.TryWriteBytes(new Span<byte>(_sendBuffer, o, 8), SteamClient.SteamId.Value);
+            o += 8;
+            state.WriteTo(_sendBuffer, o);
+
+            if (_isHost) BroadcastToClients(_sendBuffer, null);
+            else _connection?.Connection.SendMessage(_sendBuffer, SendType.Unreliable);
+        }
+
+        private PlayerState GatherLocalState()
+        {
+            return new PlayerState
+            {
+                Tick = _tick++,
+                Position = _localBody.NetworkPosition,
+                Yaw = _localBody.BodyYaw,
+                Pitch = _localCam != null ? _localCam.Pitch : 0f,
+                Velocity = _localBody.NetworkVelocity,
+                LeftHandTarget = _localHands != null ? _localHands.LeftHandTarget : Vector3.zero,
+                RightHandTarget = _localHands != null ? _localHands.RightHandTarget : Vector3.zero,
+                LeftGripping = _localHands != null && _localHands.LeftGripping,
+                RightGripping = _localHands != null && _localHands.RightGripping,
+                Stamina = _localHands != null ? _localHands.Stamina : 1f
+            };
+        }
+
+        /// <summary>Host : envoie à tous les clients sauf éventuellement l'expéditeur d'origine.</summary>
+        private void BroadcastToClients(byte[] data, Connection? except)
+        {
+            if (_socket == null) return;
+            foreach (var c in _socket.Connected)
+            {
+                if (except.HasValue && c.Id == except.Value.Id) continue;
+                c.SendMessage(data, SendType.Unreliable);
+            }
+        }
+
+        // --- Réception (appelée par GameSocket / GameConnection) ---
+
+        public void OnData(Connection from, byte[] data, bool onHost)
+        {
+            if (data == null || data.Length < 9) return;
+            var type = (MsgType)data[0];
+            ulong sender = BitConverter.ToUInt64(data, 1);
+            if (sender == SteamClient.SteamId.Value) return; // jamais soi-même
+
+            if (onHost) _connToSteam[from.Id] = sender;
+
+            if (type == MsgType.PlayerState)
+            {
+                var state = PlayerState.Deserialize(data, 9);
+                GetOrCreateRemote(sender).PushState(state);
+
+                // Host : relaie aux autres clients (étoile).
+                if (_isHost) BroadcastToClients(data, from);
+            }
+        }
+
+        public void OnConnectionClosed(Connection connection)
+        {
+            if (_connToSteam.TryGetValue(connection.Id, out ulong steamId))
+            {
+                _connToSteam.Remove(connection.Id);
+                DestroyRemote(steamId);
+            }
+        }
+
+        public void OnHostLost()
+        {
+            Debug.LogWarning("[Net] Connexion au host perdue.");
+            // Nettoyage minimal : on retire les remotes.
+            foreach (var kv in _remotes)
+                if (kv.Value != null) Destroy(kv.Value.gameObject);
+            _remotes.Clear();
+        }
+
+        // --- Spawn ---
+
+        private void SpawnLocalPlayer()
+        {
+            if (_localPlayer != null) return;
+            BuildWorld();
+            var prefab = Resources.Load<GameObject>(PlayerResource);
+            if (prefab == null)
+            {
+                Debug.LogError($"[Net] Prefab introuvable : Resources/{PlayerResource}.prefab " +
+                               "(utilise Tools ▸ Dead Island ▸ Build Player Prefab).");
+                return;
+            }
+
+            int index = LobbyManager.Instance != null ? LobbyManager.Instance.LocalIndex : 0;
+            _localPlayer = Instantiate(prefab, ComputeSpawn(index), Quaternion.identity);
+            _localPlayer.name = "Player (Local)";
+            ConfigurePlayer(_localPlayer, owner: true);
+            _localBody = _localPlayer.GetComponent<PlayerBody>();
+            _localCam = _localPlayer.GetComponent<PlayerCamera>();
+            _localHands = _localPlayer.GetComponent<PlayerHands>();
+        }
+
+        private RemotePlayer GetOrCreateRemote(ulong steamId)
+        {
+            if (_remotes.TryGetValue(steamId, out var existing) && existing != null) return existing;
+
+            var prefab = Resources.Load<GameObject>(PlayerResource);
+            // Position initiale sur la plage ; la vraie position viendra du réseau (interpolation).
+            var go = Instantiate(prefab, ComputeSpawn(_remotes.Count + 1), Quaternion.identity);
+            go.name = $"Player (Remote {steamId})";
+            ConfigurePlayer(go, owner: false);
+            var rp = go.GetComponent<RemotePlayer>();
+            _remotes[steamId] = rp;
+            return rp;
+        }
+
+        private void DestroyRemote(ulong steamId)
+        {
+            if (_remotes.TryGetValue(steamId, out var rp))
+            {
+                if (rp != null) Destroy(rp.gameObject);
+                _remotes.Remove(steamId);
+            }
+        }
+
+        private static void ConfigurePlayer(GameObject go, bool owner)
+        {
+            var body = go.GetComponent<PlayerBody>();
+            if (body != null) body.SetOwner(owner);
+
+            SetEnabled(go.GetComponent<PlayerInputReader>(), owner);
+            SetEnabled(go.GetComponent<PlayerCamera>(), owner);
+            SetEnabled(go.GetComponent<RemotePlayer>(), !owner);
+
+            // La vraie caméra/écoute audio : uniquement le joueur local.
+            var cam = go.GetComponentInChildren<Camera>(true);
+            if (cam != null) cam.enabled = owner;
+            var listener = go.GetComponentInChildren<AudioListener>(true);
+            if (listener != null) listener.enabled = owner;
+        }
+
+        private static void SetEnabled(Behaviour b, bool enabled)
+        {
+            if (b != null) b.enabled = enabled;
+        }
+
+        /// <summary>Génère l'île procédurale (depuis la seed du lobby) + l'eau. Une seule fois par client.</summary>
+        private void BuildWorld()
+        {
+            if (_worldBuilt) return;
+            int seed = LobbyManager.Instance != null ? LobbyManager.Instance.Seed : 12345;
+            int players = LobbyManager.Instance != null ? LobbyManager.Instance.PlayerCount : 1;
+            if (seed == 0) seed = 12345;
+
+            var world = WorldSpawner.Build(seed, players);
+            _worldCenter = world.Center;
+            _worldSize = world.Size;
+            _worldBuilt = true;
+        }
+
+        /// <summary>Point de spawn sur la plage : angle d'or pour répartir les joueurs autour de l'île.</summary>
+        private Vector3 ComputeSpawn(int index)
+        {
+            float angle = index * 137.508f;
+            return WorldSpawner.FindBeachSpawn(_worldCenter, _worldSize, angle);
+        }
+
+        private void ShutdownTransport()
+        {
+            _running = false;
+            try { _socket?.Close(); } catch { /* ignore */ }
+            try { _connection?.Close(); } catch { /* ignore */ }
+            _socket = null;
+            _connection = null;
+        }
+
+        public static byte[] ToBytes(IntPtr data, int size)
+        {
+            var arr = new byte[size];
+            Marshal.Copy(data, arr, 0, size);
+            return arr;
+        }
+
+        // --- Interfaces socket Facepunch ---
+
+        private class GameSocket : SocketManager
+        {
+            public NetworkManager Net;
+
+            public override void OnConnecting(Connection connection, ConnectionInfo info)
+            {
+                connection.Accept(); // accepte toutes les connexions du lobby
+            }
+
+            public override void OnConnected(Connection connection, ConnectionInfo info)
+            {
+                Debug.Log($"[Net] Client connecté : {info.Identity}");
+            }
+
+            public override void OnDisconnected(Connection connection, ConnectionInfo info)
+            {
+                Net.OnConnectionClosed(connection);
+            }
+
+            public override void OnMessage(Connection connection, NetIdentity identity, IntPtr data,
+                                           int size, long messageNum, long recvTime, int channel)
+            {
+                Net.OnData(connection, ToBytes(data, size), onHost: true);
+            }
+        }
+
+        private class GameConnection : ConnectionManager
+        {
+            public NetworkManager Net;
+
+            public override void OnConnected(ConnectionInfo info)
+            {
+                Debug.Log("[Net] Connecté au host.");
+            }
+
+            public override void OnDisconnected(ConnectionInfo info)
+            {
+                Net.OnHostLost();
+            }
+
+            public override void OnMessage(IntPtr data, int size, long messageNum, long recvTime, int channel)
+            {
+                Net.OnData(default, ToBytes(data, size), onHost: false);
+            }
+        }
+    }
+}

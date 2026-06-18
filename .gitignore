@@ -1,0 +1,62 @@
+# ---------------------------------------------------------------------------
+# Unity généré / cache (ne jamais versionner)
+# ---------------------------------------------------------------------------
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+
+# Asset meta data — ne PAS ignorer les .meta des assets versionnés
+!/[Aa]ssets/**/*.meta
+
+# ---------------------------------------------------------------------------
+# Fichiers de solution / projet générés par les IDE (régénérés par Unity)
+# ---------------------------------------------------------------------------
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.tmp
+
+# Rider / JetBrains
+/.idea/
+*.sln.iml
+
+# Visual Studio / VS Code
+/.vs/
+/.vscode/
+
+# ---------------------------------------------------------------------------
+# Builds & artefacts
+# ---------------------------------------------------------------------------
+*.apk
+*.aab
+*.unitypackage
+*.app
+*.exe
+crashlytics-build.properties
+
+# ---------------------------------------------------------------------------
+# OS
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------------------
+# Notes :
+#  - Assets/ (dont Assets/Plugins/*.dll Facepunch) EST versionné.
+#  - steam_appid.txt (racine) est versionné — requis pour les tests Steam.
+#  - Packages/manifest.json et packages-lock.json sont versionnés.
+#  - ProjectSettings/ est versionné.
+# ---------------------------------------------------------------------------
