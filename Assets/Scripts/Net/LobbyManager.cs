@@ -19,7 +19,8 @@ namespace Game.Net
         public const string ValGame = "deadisland";
         public const string KeyName = "di_name";
         public const string KeySeed = "di_seed";
-        public const string KeyState = "di_state"; // "waiting" | "playing"
+        public const string KeyState = "di_state";   // "waiting" | "playing"
+        public const string KeyPlayers = "di_players"; // nb de joueurs figé au lancement (taille d'île déterministe)
 
         public static LobbyManager Instance { get; private set; }
 
@@ -27,7 +28,15 @@ namespace Game.Net
         public bool InLobby => Current.HasValue;
         public bool IsHost => Current.HasValue && Current.Value.Owner.Id == SteamClient.SteamId;
         public int Seed => Current.HasValue && int.TryParse(Current.Value.GetData(KeySeed), out var s) ? s : 0;
-        public int PlayerCount => Current.HasValue ? Mathf.Max(1, Current.Value.MemberCount) : 1;
+        /// <summary>Nb de joueurs : figé (métadonnée) une fois la partie lancée, sinon live. Déterministe.</summary>
+        public int PlayerCount
+        {
+            get
+            {
+                if (Current.HasValue && int.TryParse(Current.Value.GetData(KeyPlayers), out int p) && p > 0) return p;
+                return Current.HasValue ? Mathf.Max(1, Current.Value.MemberCount) : 1;
+            }
+        }
 
         /// <summary>Index du joueur local parmi les membres (pour répartir les points de spawn).</summary>
         public int LocalIndex
@@ -145,6 +154,7 @@ namespace Game.Net
         public void StartGame()
         {
             if (!IsHost || !Current.HasValue) return;
+            Current.Value.SetData(KeyPlayers, Current.Value.MemberCount.ToString()); // fige la taille d'île
             Current.Value.SetData(KeyState, "playing");
             // Déclenche OnLobbyGameCreated chez tous les membres, avec l'id du host.
             Current.Value.SetGameServer(SteamClient.SteamId);
@@ -152,9 +162,19 @@ namespace Game.Net
 
         // --- Callbacks Steam ---
 
+        public bool IsPlaying => Current.HasValue && Current.Value.GetData(KeyState) == "playing";
+
         private void HandleEntered(Lobby lobby)
         {
             Current = lobby;
+
+            // Late join : si la partie est déjà lancée, on rejoint directement le jeu (pas la salle d'attente).
+            if (lobby.GetData(KeyState) == "playing")
+            {
+                OnGameStart?.Invoke(lobby.Owner.Id);
+                return;
+            }
+
             OnEnteredLobby?.Invoke(lobby);
             OnMembersChanged?.Invoke();
         }

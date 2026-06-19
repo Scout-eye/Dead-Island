@@ -27,6 +27,9 @@ namespace Game.Net
 
         public static NetworkManager Instance { get; private set; }
 
+        /// <summary>Déconnexion subie (ex: hôte perdu). Fournit un message à afficher.</summary>
+        public event System.Action<string> Disconnected;
+
         private GameSocket _socket;          // host
         private GameConnection _connection;  // client
         private bool _isHost;
@@ -40,6 +43,8 @@ namespace Game.Net
         private bool _worldBuilt;
         private Vector3 _worldCenter;
         private float _worldSize;
+        private GameObject _worldRoot;
+        private bool _hostLost;
 
         private readonly Dictionary<ulong, RemotePlayer> _remotes = new Dictionary<ulong, RemotePlayer>();
         private readonly Dictionary<uint, ulong> _connToSteam = new Dictionary<uint, ulong>(); // host: connId -> steamId
@@ -75,8 +80,35 @@ namespace Game.Net
 
         private void HandleGameStart(SteamId hostId)
         {
-            if (LobbyManager.Instance != null && LobbyManager.Instance.IsHost) StartHost();
+            // Garde : on ne démarre que si on est bien dans un lobby (évite de lancer une partie
+            // vide sur un signal parasite, ex. après avoir quitté).
+            if (LobbyManager.Instance == null || !LobbyManager.Instance.InLobby) return;
+            if (_running) return;
+
+            if (LobbyManager.Instance.IsHost) StartHost();
             else StartClient(hostId);
+        }
+
+        /// <summary>Quitte la partie : coupe le réseau, détruit le monde et tous les joueurs.</summary>
+        public void LeaveGame()
+        {
+            ShutdownTransport();
+
+            if (_localPlayer != null) Destroy(_localPlayer);
+            _localPlayer = null;
+            _localBody = null;
+            _localCam = null;
+            _localHands = null;
+
+            foreach (var kv in _remotes)
+                if (kv.Value != null) Destroy(kv.Value.gameObject);
+            _remotes.Clear();
+            _connToSteam.Clear();
+
+            if (_worldRoot != null) Destroy(_worldRoot);
+            _worldRoot = null;
+            _worldBuilt = false;
+            _isHost = false;
         }
 
         public void StartHost()
@@ -107,6 +139,15 @@ namespace Game.Net
 
             _socket?.Receive();
             _connection?.Receive();
+
+            // Déconnexion subie détectée pendant Receive : on nettoie HORS du callback (sûr).
+            if (_hostLost)
+            {
+                _hostLost = false;
+                LeaveGame();
+                Disconnected?.Invoke("Connexion à l'hôte perdue.");
+                return;
+            }
 
             if (_localBody == null) return;
             _sendTimer += Time.deltaTime;
@@ -189,11 +230,8 @@ namespace Game.Net
 
         public void OnHostLost()
         {
-            Debug.LogWarning("[Net] Connexion au host perdue.");
-            // Nettoyage minimal : on retire les remotes.
-            foreach (var kv in _remotes)
-                if (kv.Value != null) Destroy(kv.Value.gameObject);
-            _remotes.Clear();
+            // Appelé depuis un callback de connexion : on diffère le nettoyage au prochain Update.
+            _hostLost = true;
         }
 
         // --- Spawn ---
@@ -274,6 +312,7 @@ namespace Game.Net
             var world = WorldSpawner.Build(seed, players);
             _worldCenter = world.Center;
             _worldSize = world.Size;
+            _worldRoot = world.Root;
             _worldBuilt = true;
         }
 

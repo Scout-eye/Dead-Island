@@ -40,7 +40,7 @@ dans l'esprit de *Peak* (grimpe physique) × *Galerapagos* (tension sociale). Pr
 - `IslandGenerator` (composant) : clic droit ▸ **Régénérer (test)** pour visualiser une île.
 
 ### Contrôles
-ZQSD/WASD déplacement · Souris regarder · **Shift** courir · **Espace** sauter.
+ZQSD/WASD déplacement · Souris regarder · **Shift** courir · **Espace** sauter · **Échap** pause (Reprendre / Menu principal).
 
 ### Tester le multijoueur
 Le P2P passe par le client Steam. Pour jouer à deux : **2 machines, 2 comptes Steam différents**

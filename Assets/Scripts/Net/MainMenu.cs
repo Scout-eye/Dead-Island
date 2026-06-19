@@ -3,6 +3,7 @@ using Steamworks.Data;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.Events;
+using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 using Color = UnityEngine.Color;
@@ -28,7 +29,12 @@ namespace Game.Net
         private Transform _memberListContent;
         private Text _seedText;
         private Button _startButton;
+        private GameObject _pausePanel;
+        private Text _notifLabel;
+        private float _notifTimer;
         private Canvas _canvas;
+        private bool _inGame;
+        private bool _paused;
 
         private void Start()
         {
@@ -45,6 +51,8 @@ namespace Game.Net
             lm.OnLeftLobby += ShowMain;
             lm.OnMembersChanged += RefreshRoom;
             lm.OnGameStart += _ => HideMenu();
+
+            NetworkManager.Instance.Disconnected += HandleDisconnected;
 
             ShowMain();
         }
@@ -64,6 +72,81 @@ namespace Game.Net
             BuildMainPanel();
             BuildBrowsePanel();
             BuildRoomPanel();
+            BuildPausePanel();
+            BuildNotification();
+        }
+
+        private void BuildNotification()
+        {
+            var go = new GameObject("Notif", typeof(RectTransform));
+            go.transform.SetParent(_canvas.transform, false);
+            _notifLabel = go.AddComponent<Text>();
+            _notifLabel.font = UIFont;
+            _notifLabel.fontSize = 22;
+            _notifLabel.color = new Color(1f, 0.6f, 0.5f, 1f);
+            _notifLabel.alignment = TextAnchor.UpperCenter;
+            _notifLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
+            var rt = _notifLabel.rectTransform;
+            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 1f);
+            rt.sizeDelta = new Vector2(700, 40);
+            rt.anchoredPosition = new Vector2(0f, -28f);
+            go.SetActive(false);
+        }
+
+        private void ShowNotification(string message, float duration = 4f)
+        {
+            if (_notifLabel == null) return;
+            _notifLabel.text = message;
+            _notifLabel.gameObject.SetActive(true);
+            _notifTimer = duration;
+        }
+
+        private void HandleDisconnected(string reason)
+        {
+            // L'hôte est perdu : NetworkManager a déjà nettoyé le jeu, on revient au menu + notif.
+            if (LobbyManager.Instance != null) LobbyManager.Instance.LeaveLobby();
+            ShowMain();
+            ShowNotification(reason);
+        }
+
+        private void BuildPausePanel()
+        {
+            _pausePanel = MakePanel(_canvas.transform, "PausePanel");
+            MakeText(_pausePanel.transform, "Pause", 28);
+            MakeButton(_pausePanel.transform, "Reprendre", () => SetPaused(false));
+            MakeButton(_pausePanel.transform, "Menu principal", ReturnToMenu);
+            _pausePanel.SetActive(false);
+        }
+
+        private void Update()
+        {
+            if (_notifTimer > 0f)
+            {
+                _notifTimer -= Time.unscaledDeltaTime;
+                if (_notifTimer <= 0f && _notifLabel != null) _notifLabel.gameObject.SetActive(false);
+            }
+
+            if (!_inGame) return;
+            var kb = Keyboard.current;
+            if (kb != null && kb.escapeKey.wasPressedThisFrame)
+                SetPaused(!_paused);
+        }
+
+        private void SetPaused(bool paused)
+        {
+            _paused = paused;
+            if (_pausePanel != null) _pausePanel.SetActive(paused);
+            Cursor.lockState = paused ? CursorLockMode.None : CursorLockMode.Locked;
+            Cursor.visible = paused;
+        }
+
+        private void ReturnToMenu()
+        {
+            _inGame = false;
+            _paused = false;
+            if (NetworkManager.Instance != null) NetworkManager.Instance.LeaveGame();
+            if (LobbyManager.Instance != null) LobbyManager.Instance.LeaveLobby(); // -> OnLeftLobby -> ShowMain
+            ShowMain();
         }
 
         private void BuildMainPanel()
@@ -109,9 +192,14 @@ namespace Game.Net
 
         private void ShowMain()
         {
+            _inGame = false;
+            _paused = false;
             _mainPanel.SetActive(true);
             _browsePanel.SetActive(false);
             _roomPanel.SetActive(false);
+            if (_pausePanel != null) _pausePanel.SetActive(false);
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
         }
 
         private void ShowBrowse()
@@ -132,7 +220,13 @@ namespace Game.Net
 
         private void HideMenu()
         {
-            if (_canvas != null) _canvas.gameObject.SetActive(false);
+            // En jeu : on cache les panneaux (le canvas reste actif pour l'overlay pause Échap).
+            _inGame = true;
+            _paused = false;
+            _mainPanel.SetActive(false);
+            _browsePanel.SetActive(false);
+            _roomPanel.SetActive(false);
+            if (_pausePanel != null) _pausePanel.SetActive(false);
         }
 
         // --- Données ---

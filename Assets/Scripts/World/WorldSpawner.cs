@@ -11,6 +11,7 @@ namespace Game.World
     {
         public struct World
         {
+            public GameObject Root;   // parent de l'île + l'eau (détruire pour tout nettoyer)
             public IslandGenerator Island;
             public Vector3 Center;
             public float Size;
@@ -18,19 +19,23 @@ namespace Game.World
 
         public static World Build(int seed, int players)
         {
-            var go = new GameObject("Island");
-            go.transform.position = Vector3.zero;
+            var root = new GameObject("World");
 
-            var island = go.AddComponent<IslandGenerator>();
+            var islandGo = new GameObject("Island");
+            islandGo.transform.SetParent(root.transform);
+            islandGo.transform.localPosition = Vector3.zero;
+
+            var island = islandGo.AddComponent<IslandGenerator>();
             island.GenerateOnStart = false;       // on pilote la génération nous-mêmes
             island.Generate(seed, players);
 
             float size = island.CurrentSize;
-            WaterPlane.Create(Vector3.zero, size * 1.6f);
+            var water = WaterPlane.Create(Vector3.zero, size * 1.6f);
+            water.transform.SetParent(root.transform);
 
             Physics.SyncTransforms();             // pour que les raycasts de spawn voient le collider
 
-            return new World { Island = island, Center = Vector3.zero, Size = size };
+            return new World { Root = root, Island = island, Center = Vector3.zero, Size = size };
         }
 
         /// <summary>

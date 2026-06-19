@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 namespace Game.Player
 {
@@ -79,13 +78,7 @@ namespace Game.Player
         {
             if (_body == null || !_body.IsOwner) return;
 
-            // Echap libère le curseur, clic le reverrouille (confort éditeur).
-            var kb = Keyboard.current;
-            if (kb != null && kb.escapeKey.wasPressedThisFrame) LockCursor(false);
-            var mouse = Mouse.current;
-            if (mouse != null && mouse.leftButton.wasPressedThisFrame && Cursor.lockState != CursorLockMode.Locked)
-                LockCursor(true);
-
+            // Le curseur est géré par le menu pause (Échap). Si déverrouillé (en pause), on ne tourne pas.
             if (Cursor.lockState != CursorLockMode.Locked) return;
 
             Vector2 look = _input != null ? _input.Look : Vector2.zero;
