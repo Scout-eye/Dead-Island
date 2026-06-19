@@ -118,12 +118,25 @@ namespace Game.Net
             _pausePanel.SetActive(false);
         }
 
+        private float _roomRefreshTimer;
+
         private void Update()
         {
             if (_notifTimer > 0f)
             {
                 _notifTimer -= Time.unscaledDeltaTime;
                 if (_notifTimer <= 0f && _notifLabel != null) _notifLabel.gameObject.SetActive(false);
+            }
+
+            // Rafraîchit la liste de la salle d'attente régulièrement (fiabilise si un callback manque).
+            if (_roomPanel != null && _roomPanel.activeSelf)
+            {
+                _roomRefreshTimer -= Time.unscaledDeltaTime;
+                if (_roomRefreshTimer <= 0f)
+                {
+                    _roomRefreshTimer = 1f;
+                    RefreshRoom();
+                }
             }
 
             if (!_inGame) return;
@@ -264,11 +277,14 @@ namespace Game.Net
             _seedText.text = $"Seed : {lm.Seed}";
             _startButton.gameObject.SetActive(lm.IsHost);
 
+            var lobby = lm.Current.Value;
             ClearChildren(_memberListContent);
-            foreach (var member in lm.Current.Value.Members)
+            MakeText(_memberListContent, $"Joueurs ({lobby.MemberCount}/{lobby.MaxMembers})", 14, TextAnchor.MiddleLeft);
+            foreach (var member in lobby.Members)
             {
-                string tag = member.Id == lm.Current.Value.Owner.Id ? " (host)" : "";
-                MakeText(_memberListContent, member.Name + tag, 16, TextAnchor.MiddleLeft);
+                string name = string.IsNullOrEmpty(member.Name) ? $"Joueur {member.Id}" : member.Name;
+                string tag = member.Id == lobby.Owner.Id ? " (hôte)" : "";
+                MakeText(_memberListContent, "• " + name + tag, 16, TextAnchor.MiddleLeft);
             }
         }
 

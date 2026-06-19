@@ -20,8 +20,10 @@ namespace Game.Net
     [DisallowMultipleComponent]
     public sealed class NetworkManager : MonoBehaviour
     {
-        private const int SendRate = 20;
+        private const int SendRate = 30;
         private const string PlayerResource = "Player"; // Assets/Resources/Player.prefab
+        // NoNagle = envoi immédiat (pas de regroupement) => latence plus basse.
+        private const SendType StateSendType = SendType.Unreliable | SendType.NoNagle;
 
         private enum MsgType : byte { PlayerState = 0, GameEvent = 1 }
 
@@ -69,21 +71,34 @@ namespace Game.Net
 
         private void Start()
         {
-            LobbyManager.EnsureExists().OnGameStart += HandleGameStart;
+            var lm = LobbyManager.EnsureExists();
+            lm.OnEnteredLobby += HandleEnteredLobby;
+            lm.OnGameStart += HandleGameStart;
+            lm.OnLeftLobby += LeaveGame;   // quitter le lobby ferme la socket + nettoie
         }
 
         private void OnDestroy()
         {
-            if (LobbyManager.Instance != null) LobbyManager.Instance.OnGameStart -= HandleGameStart;
+            if (LobbyManager.Instance != null)
+            {
+                LobbyManager.Instance.OnEnteredLobby -= HandleEnteredLobby;
+                LobbyManager.Instance.OnGameStart -= HandleGameStart;
+                LobbyManager.Instance.OnLeftLobby -= LeaveGame;
+            }
             if (Instance == this) ShutdownTransport();
+        }
+
+        // Dès qu'on entre dans son propre lobby (hôte), on ouvre la socket d'écoute : elle est ainsi
+        // prête bien avant que les clients tentent de se connecter (évite la course au démarrage).
+        private void HandleEnteredLobby(Steamworks.Data.Lobby lobby)
+        {
+            if (LobbyManager.Instance != null && LobbyManager.Instance.IsHost) OpenHostSocket();
         }
 
         private void HandleGameStart(SteamId hostId)
         {
-            // Garde : on ne démarre que si on est bien dans un lobby (évite de lancer une partie
-            // vide sur un signal parasite, ex. après avoir quitté).
+            // Garde : on ne démarre que si on est bien dans un lobby (évite une partie vide sur signal parasite).
             if (LobbyManager.Instance == null || !LobbyManager.Instance.InLobby) return;
-            if (_running) return;
 
             if (LobbyManager.Instance.IsHost) StartHost();
             else StartClient(hostId);
@@ -111,26 +126,33 @@ namespace Game.Net
             _isHost = false;
         }
 
-        public void StartHost()
+        private void OpenHostSocket()
         {
-            if (_running) return;
+            if (_socket != null) return;
             _isHost = true;
             _socket = SteamNetworkingSockets.CreateRelaySocket<GameSocket>();
             _socket.Net = this;
             _running = true;
-            SpawnLocalPlayer();
-            Debug.Log("[Net] Host démarré (socket relais).");
+            Debug.Log("[Net] Socket hôte ouverte (relais) — prête à accepter.");
+        }
+
+        public void StartHost()
+        {
+            OpenHostSocket();      // déjà ouverte à l'entrée du lobby en principe
+            SpawnLocalPlayer();    // idempotent
         }
 
         public void StartClient(SteamId hostId)
         {
-            if (_running) return;
-            _isHost = false;
-            _connection = SteamNetworkingSockets.ConnectRelay<GameConnection>(hostId);
-            _connection.Net = this;
-            _running = true;
-            SpawnLocalPlayer();
-            Debug.Log($"[Net] Client connecté au host {hostId}.");
+            if (_connection == null)
+            {
+                _isHost = false;
+                _connection = SteamNetworkingSockets.ConnectRelay<GameConnection>(hostId);
+                _connection.Net = this;
+                _running = true;
+                Debug.Log($"[Net] Connexion au host {hostId}...");
+            }
+            SpawnLocalPlayer();    // idempotent (if (_localPlayer != null) return)
         }
 
         private void Update()
@@ -170,7 +192,7 @@ namespace Game.Net
             state.WriteTo(_sendBuffer, o);
 
             if (_isHost) BroadcastToClients(_sendBuffer, null);
-            else _connection?.Connection.SendMessage(_sendBuffer, SendType.Unreliable);
+            else _connection?.Connection.SendMessage(_sendBuffer, StateSendType);
         }
 
         private PlayerState GatherLocalState()
@@ -194,7 +216,7 @@ namespace Game.Net
             foreach (var c in _socket.Connected)
             {
                 if (except.HasValue && c.Id == except.Value.Id) continue;
-                c.SendMessage(data, SendType.Unreliable);
+                c.SendMessage(data, StateSendType);
             }
         }
 
@@ -268,6 +290,7 @@ namespace Game.Net
             ConfigurePlayer(go, owner: false);
             var rp = go.GetComponent<RemotePlayer>();
             _remotes[steamId] = rp;
+            Debug.Log($"[Net] Joueur distant créé : {steamId} ({(_isHost ? "host reçoit client" : "client reçoit relai")}).");
             return rp;
         }
 
