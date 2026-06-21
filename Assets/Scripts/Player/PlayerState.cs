@@ -22,6 +22,7 @@ namespace Game.Player
         public Vector3 Velocity;      // vélocité linéaire, pour l'extrapolation côté remote
         public Vector3 LeftHandTarget;  // cible monde de la main gauche (IK)
         public Vector3 RightHandTarget; // cible monde de la main droite (IK)
+        public bool Dead;               // état de mort (pour ragdoll distant + détection "tous morts")
 
         /// <summary>Taille fixe en octets d'un state sérialisé.</summary>
         public const int Size = sizeof(uint)        // Tick
@@ -30,7 +31,8 @@ namespace Game.Player
                               + sizeof(float)        // Pitch
                               + sizeof(float) * 3    // Velocity
                               + sizeof(float) * 3    // LeftHandTarget
-                              + sizeof(float) * 3;   // RightHandTarget
+                              + sizeof(float) * 3    // RightHandTarget
+                              + sizeof(byte);        // Dead
 
         public byte[] Serialize()
         {
@@ -50,6 +52,7 @@ namespace Game.Player
             o = Write(buffer, o, Velocity.x); o = Write(buffer, o, Velocity.y); o = Write(buffer, o, Velocity.z);
             o = Write(buffer, o, LeftHandTarget.x); o = Write(buffer, o, LeftHandTarget.y); o = Write(buffer, o, LeftHandTarget.z);
             o = Write(buffer, o, RightHandTarget.x); o = Write(buffer, o, RightHandTarget.y); o = Write(buffer, o, RightHandTarget.z);
+            buffer[o++] = (byte)(Dead ? 1 : 0);
             return o;
         }
 
@@ -64,6 +67,7 @@ namespace Game.Player
             s.Velocity = ReadVector3(buffer, ref o);
             s.LeftHandTarget = ReadVector3(buffer, ref o);
             s.RightHandTarget = ReadVector3(buffer, ref o);
+            s.Dead = buffer[o++] != 0;
             return s;
         }
 

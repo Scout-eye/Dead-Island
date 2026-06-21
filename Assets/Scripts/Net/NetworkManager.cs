@@ -31,6 +31,10 @@ namespace Game.Net
 
         /// <summary>Déconnexion subie (ex: hôte perdu). Fournit un message à afficher.</summary>
         public event System.Action<string> Disconnected;
+        /// <summary>Retour à la salle d'attente (tous morts) — la connexion reste ouverte.</summary>
+        public event System.Action OnReturnedToRoom;
+
+        private const byte EvtReturnToRoom = 1;
 
         private GameSocket _socket;          // host
         private GameConnection _connection;  // client
@@ -41,6 +45,7 @@ namespace Game.Net
         private PlayerBody _localBody;
         private PlayerCamera _localCam;
         private PlayerHands _localHands;
+        private PlayerVitals _localVitals;
 
         private bool _worldBuilt;
         private Vector3 _worldCenter;
@@ -75,6 +80,7 @@ namespace Game.Net
             lm.OnEnteredLobby += HandleEnteredLobby;
             lm.OnGameStart += HandleGameStart;
             lm.OnLeftLobby += LeaveGame;   // quitter le lobby ferme la socket + nettoie
+            PlayerVitals.AllDead += HandleAllDead;
         }
 
         private void OnDestroy()
@@ -85,7 +91,37 @@ namespace Game.Net
                 LobbyManager.Instance.OnGameStart -= HandleGameStart;
                 LobbyManager.Instance.OnLeftLobby -= LeaveGame;
             }
+            PlayerVitals.AllDead -= HandleAllDead;
             if (Instance == this) ShutdownTransport();
+        }
+
+        // Tous les joueurs sont morts : l'HÔTE fait autorité — il prévient tout le monde et
+        // chacun revient en salle d'attente (la connexion reste ouverte pour rejouer).
+        private void HandleAllDead()
+        {
+            if (!_running) return;
+            if (LobbyManager.Instance == null || !LobbyManager.Instance.IsHost) return;
+            LobbyManager.Instance.SetWaiting();
+            BroadcastGameEvent(EvtReturnToRoom);
+            ReturnToRoom();
+        }
+
+        /// <summary>Retour salle d'attente : détruit monde + joueurs mais GARDE la connexion ouverte.</summary>
+        public void ReturnToRoom()
+        {
+            if (_localPlayer != null) Destroy(_localPlayer);
+            _localPlayer = null; _localBody = null; _localCam = null; _localHands = null; _localVitals = null;
+
+            foreach (var kv in _remotes)
+                if (kv.Value != null) Destroy(kv.Value.gameObject);
+            _remotes.Clear();
+            _connToSteam.Clear();
+
+            if (_worldRoot != null) Destroy(_worldRoot);
+            _worldRoot = null;
+            _worldBuilt = false;
+
+            OnReturnedToRoom?.Invoke();
         }
 
         // Dès qu'on entre dans son propre lobby (hôte), on ouvre la socket d'écoute : elle est ainsi
@@ -114,6 +150,7 @@ namespace Game.Net
             _localBody = null;
             _localCam = null;
             _localHands = null;
+            _localVitals = null;
 
             foreach (var kv in _remotes)
                 if (kv.Value != null) Destroy(kv.Value.gameObject);
@@ -205,8 +242,20 @@ namespace Game.Net
                 Pitch = _localCam != null ? _localCam.Pitch : 0f,
                 Velocity = _localBody.NetworkVelocity,
                 LeftHandTarget = _localHands != null ? _localHands.LeftHandTarget : Vector3.zero,
-                RightHandTarget = _localHands != null ? _localHands.RightHandTarget : Vector3.zero
+                RightHandTarget = _localHands != null ? _localHands.RightHandTarget : Vector3.zero,
+                Dead = _localVitals != null && _localVitals.IsDead
             };
+        }
+
+        /// <summary>Envoie un événement de jeu fiable (host -> clients, ou client -> host).</summary>
+        private void BroadcastGameEvent(byte eventId)
+        {
+            var buf = new byte[1 + 8 + 1];
+            buf[0] = (byte)MsgType.GameEvent;
+            BitConverter.TryWriteBytes(new Span<byte>(buf, 1, 8), SteamClient.SteamId.Value);
+            buf[9] = eventId;
+            if (_isHost) BroadcastToClients(buf, null);
+            else _connection?.Connection.SendMessage(buf, SendType.Reliable);
         }
 
         /// <summary>Host : envoie à tous les clients sauf éventuellement l'expéditeur d'origine.</summary>
@@ -238,6 +287,10 @@ namespace Game.Net
 
                 // Host : relaie aux autres clients (étoile).
                 if (_isHost) BroadcastToClients(data, from);
+            }
+            else if (type == MsgType.GameEvent && data.Length >= 10)
+            {
+                if (data[9] == EvtReturnToRoom) ReturnToRoom();
             }
         }
 
@@ -277,6 +330,7 @@ namespace Game.Net
             _localBody = _localPlayer.GetComponent<PlayerBody>();
             _localCam = _localPlayer.GetComponent<PlayerCamera>();
             _localHands = _localPlayer.GetComponent<PlayerHands>();
+            _localVitals = _localPlayer.GetComponent<PlayerVitals>();
         }
 
         private RemotePlayer GetOrCreateRemote(ulong steamId)

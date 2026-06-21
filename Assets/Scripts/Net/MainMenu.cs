@@ -46,6 +46,8 @@ namespace Game.Net
             EnsureEventSystem();
             BuildUI();
 
+            // (Le HUD de survie s'auto-crée via VitalsHUD.Bootstrap — indépendant du menu/multijoueur.)
+
             var lm = LobbyManager.Instance;
             lm.OnEnteredLobby += _ => ShowRoom();
             lm.OnLeftLobby += ShowMain;
@@ -53,6 +55,7 @@ namespace Game.Net
             lm.OnGameStart += _ => HideMenu();
 
             NetworkManager.Instance.Disconnected += HandleDisconnected;
+            NetworkManager.Instance.OnReturnedToRoom += HandleReturnedToRoom;
 
             ShowMain();
         }
@@ -107,6 +110,17 @@ namespace Game.Net
             if (LobbyManager.Instance != null) LobbyManager.Instance.LeaveLobby();
             ShowMain();
             ShowNotification(reason);
+        }
+
+        private void HandleReturnedToRoom()
+        {
+            // Tous morts : le jeu est nettoyé mais on reste dans le lobby -> salle d'attente.
+            _inGame = false;
+            _paused = false;
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+            ShowRoom();
+            ShowNotification("Tous les joueurs sont morts. Retour à la salle d'attente.");
         }
 
         private void BuildPausePanel()

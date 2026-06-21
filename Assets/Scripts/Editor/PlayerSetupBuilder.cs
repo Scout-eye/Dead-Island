@@ -146,7 +146,14 @@ namespace Game.Player.EditorTools
             var camera = player.AddComponent<PlayerCamera>();
             var animator = player.AddComponent<PlayerProceduralAnimator>();
             var hands = player.AddComponent<PlayerHands>();
-            player.AddComponent<RemotePlayer>(); // activé seulement pour les joueurs distants
+            var remote = player.AddComponent<RemotePlayer>();
+            remote.enabled = false; // dormant ; activé par le réseau uniquement pour les distants
+
+            // Survie + mort (faible adhérence : communiquent par événements / registre)
+            player.AddComponent<PlayerVitals>();
+            player.AddComponent<PlayerRagdoll>();
+            player.AddComponent<SpectatorController>(); // dormant tant que vivant (gardé par _active)
+            player.AddComponent<PlayerDeath>();
 
             // --- Câblage via SerializedObject (champs privés [SerializeField]) ---
             var soCam = new SerializedObject(camera);

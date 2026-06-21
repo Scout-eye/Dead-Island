@@ -160,6 +160,13 @@ namespace Game.Net
             Current.Value.SetGameServer(SteamClient.SteamId);
         }
 
+        /// <summary>Host uniquement : repasse le lobby en "waiting" (ex: tous morts -> salle d'attente).</summary>
+        public void SetWaiting()
+        {
+            if (!IsHost || !Current.HasValue) return;
+            Current.Value.SetData(KeyState, "waiting");
+        }
+
         // --- Callbacks Steam ---
 
         public bool IsPlaying => Current.HasValue && Current.Value.GetData(KeyState) == "playing";

@@ -17,6 +17,10 @@ GameObject:
   - component: {fileID: 5741676135354554881}
   - component: {fileID: 8625321198270284821}
   - component: {fileID: 7735311392998814338}
+  - component: {fileID: 4543358751472846227}
+  - component: {fileID: 8442257982781800307}
+  - component: {fileID: 5780308034626543360}
+  - component: {fileID: 737951850635463903}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -234,13 +238,71 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2576222346384779754}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 2a89178e8b64c074387908642c872489, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Game.Player::Game.Player.RemotePlayer
   _interpolationDelay: 0.12
   _maxBuffer: 16
+--- !u!114 &4543358751472846227
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2576222346384779754}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fae4476d6637e5f45bba1632c96730ed, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Game.Player::Game.Player.PlayerVitals
+  _maxHealth: 100
+  _maxHunger: 100
+  _maxThirst: 100
+  _hungerDrain: 2
+  _thirstDrain: 3
+  _starveDamage: 3
+--- !u!114 &8442257982781800307
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2576222346384779754}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8e0f3a50ae12c70419ac405805042c6c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Game.Player::Game.Player.PlayerRagdoll
+  _topple: 4
+--- !u!114 &5780308034626543360
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2576222346384779754}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5097e0db2111d1449a239cb128482d94, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Game.Player::Game.Player.SpectatorController
+  _offset: {x: 0, y: 3, z: -5}
+  _followSmoothing: 8
+  _lookAtHeight: 1.5
+--- !u!114 &737951850635463903
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2576222346384779754}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 02674a2f6070fd848b320a34e686c0c2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Game.Player::Game.Player.PlayerDeath
 --- !u!1 &7142332465764194656
 GameObject:
   m_ObjectHideFlags: 0

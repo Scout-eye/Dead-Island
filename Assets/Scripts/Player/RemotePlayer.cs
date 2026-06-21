@@ -25,6 +25,7 @@ namespace Game.Player
         private PlayerBody _body;
         private PlayerCamera _camera;
         private PlayerHands _hands;
+        private PlayerVitals _vitals;
 
         private readonly List<Snapshot> _buffer = new List<Snapshot>();
 
@@ -33,6 +34,7 @@ namespace Game.Player
             _body = GetComponent<PlayerBody>();
             _camera = GetComponent<PlayerCamera>();
             _hands = GetComponent<PlayerHands>();
+            _vitals = GetComponent<PlayerVitals>();
         }
 
         /// <summary>Appelé par NetworkManager à chaque state reçu pour ce joueur.</summary>
@@ -91,6 +93,8 @@ namespace Game.Player
                 _camera.SetNetworkLook(s.Yaw, s.Pitch); // pas de head-yaw indépendant synchronisé pour l'instant
             if (_hands != null)
                 _hands.SetNetworkHands(s.LeftHandTarget, s.RightHandTarget);
+            if (_vitals != null)
+                _vitals.SetDeadFromNetwork(s.Dead);
         }
 
         private static PlayerState Interpolate(PlayerState a, PlayerState b, float t)
@@ -103,7 +107,8 @@ namespace Game.Player
                 Pitch = Mathf.LerpAngle(a.Pitch, b.Pitch, t),
                 Velocity = Vector3.Lerp(a.Velocity, b.Velocity, t),
                 LeftHandTarget = Vector3.Lerp(a.LeftHandTarget, b.LeftHandTarget, t),
-                RightHandTarget = Vector3.Lerp(a.RightHandTarget, b.RightHandTarget, t)
+                RightHandTarget = Vector3.Lerp(a.RightHandTarget, b.RightHandTarget, t),
+                Dead = b.Dead
             };
         }
 
