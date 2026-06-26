@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using Game.Player.Ragdoll;
 
 namespace Game.Player
 {
@@ -8,9 +9,9 @@ namespace Game.Player
     /// les met dans un buffer et INTERPOLE position / rotation / cibles d'IK avec un léger
     /// retard (interpolation buffer), puis réinjecte le résultat dans les composants joueur.
     ///
-    /// Aucune physique ni input : le corps est kinematic (SetOwner(false)). L'IK des bras/jambes
-    /// est recalculée localement par PlayerHands / PlayerProceduralAnimator à partir des cibles
-    /// et de la vitesse réseau (PlayerBody.CurrentVelocity).
+    /// Aucune physique ni input : le ragdoll est kinematic (SetOwner(false)) et son transform racine
+    /// est déplacé par interpolation. La vraie synchro des os de l'active ragdoll est une itération
+    /// future (pour l'instant le squelette suit rigidement le root dans sa dernière pose).
     ///
     /// Composant présent sur le prefab joueur, activé uniquement pour les remotes.
     /// </summary>
@@ -22,18 +23,18 @@ namespace Game.Player
         [SerializeField] private float _interpolationDelay = 0.12f;
         [SerializeField] private int _maxBuffer = 16;
 
-        private PlayerBody _body;
+        private RagdollLocomotion _body;
         private PlayerCamera _camera;
-        private PlayerHands _hands;
+        private HandReach _hands;
         private PlayerVitals _vitals;
 
         private readonly List<Snapshot> _buffer = new List<Snapshot>();
 
         private void Awake()
         {
-            _body = GetComponent<PlayerBody>();
+            _body = GetComponent<RagdollLocomotion>();
             _camera = GetComponent<PlayerCamera>();
-            _hands = GetComponent<PlayerHands>();
+            _hands = GetComponent<HandReach>();
             _vitals = GetComponent<PlayerVitals>();
         }
 

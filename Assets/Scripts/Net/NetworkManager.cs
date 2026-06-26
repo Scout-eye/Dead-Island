@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Game.Player;
+using Game.Player.Ragdoll;
 using Game.World;
 using Steamworks;
 using Steamworks.Data;
@@ -42,9 +43,9 @@ namespace Game.Net
         private bool _running;
 
         private GameObject _localPlayer;
-        private PlayerBody _localBody;
+        private RagdollLocomotion _localBody;
         private PlayerCamera _localCam;
-        private PlayerHands _localHands;
+        private HandReach _localHands;
         private PlayerVitals _localVitals;
 
         private bool _worldBuilt;
@@ -327,9 +328,9 @@ namespace Game.Net
             _localPlayer = Instantiate(prefab, ComputeSpawn(index), Quaternion.identity);
             _localPlayer.name = "Player (Local)";
             ConfigurePlayer(_localPlayer, owner: true);
-            _localBody = _localPlayer.GetComponent<PlayerBody>();
+            _localBody = _localPlayer.GetComponent<RagdollLocomotion>();
             _localCam = _localPlayer.GetComponent<PlayerCamera>();
-            _localHands = _localPlayer.GetComponent<PlayerHands>();
+            _localHands = _localPlayer.GetComponent<HandReach>();
             _localVitals = _localPlayer.GetComponent<PlayerVitals>();
         }
 
@@ -359,7 +360,7 @@ namespace Game.Net
 
         private static void ConfigurePlayer(GameObject go, bool owner)
         {
-            var body = go.GetComponent<PlayerBody>();
+            var body = go.GetComponent<RagdollLocomotion>();
             if (body != null) body.SetOwner(owner);
 
             SetEnabled(go.GetComponent<PlayerInputReader>(), owner);

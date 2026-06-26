@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mv \"Y Bot@Idle.fbx\" \"Idle.fbx\")",
+      "Bash(mv \"Y Bot@Idle.fbx.meta\" \"Idle.fbx.meta\")",
+      "Bash(mv \"Y Bot@Walking.fbx\" \"Walk.fbx\")",
+      "Bash(mv \"Y Bot@Walking.fbx.meta\" \"Walk.fbx.meta\")",
+      "Bash(mv \"Y Bot@Running.fbx\" \"Run.fbx\")",
+      "WebFetch(domain:docs.unity3d.com)",
+      "Bash(cd \"c:/Users/cleme/.claude/projects/c--dev-Unity-Dead-Island/memory\" && rm -f MEMORY.md peak-active-ragdoll-rework.md && echo \"supprimés :\" && ls -1)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\cleme\\.claude\\projects\\c--dev-Unity-Dead-Island\\memory"
+    ]
+  }
+}

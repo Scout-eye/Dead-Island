@@ -1,12 +1,13 @@
 using UnityEngine;
+using Game.Player.Ragdoll;
 
 namespace Game.Player
 {
     /// <summary>
     /// Caméra FPS procédurale.
-    ///   - Souris X  -> yaw, appliqué au Rigidbody du corps (par PlayerBody, qui lit Yaw ici).
+    ///   - Souris X  -> yaw du regard (LookYaw), lu par la locomotion pour orienter le corps.
     ///   - Souris Y  -> pitch, appliqué uniquement au CameraRig (clampé).
-    ///   - Head bob  -> oscillation procédurale basée sur la vélocité du Rigidbody (zéro keyframe).
+    ///   - Head bob  -> oscillation procédurale basée sur la vélocité du bassin (zéro keyframe).
     ///   - Lean      -> légère inclinaison (roll) quand on strafe.
     ///
     /// Le CameraRig suit la position de la tête du modèle Mixamo (headBone) si elle est fournie,
@@ -37,7 +38,7 @@ namespace Game.Player
         [SerializeField] private float _leanSmoothing = 8f;
 
         private PlayerInputReader _input;
-        private PlayerBody _body;
+        private RagdollLocomotion _body;
 
         private float _lookYaw;
         private float _pitch;
@@ -61,7 +62,7 @@ namespace Game.Player
         private void Awake()
         {
             _input = GetComponent<PlayerInputReader>();
-            _body = GetComponent<PlayerBody>();
+            _body = GetComponent<RagdollLocomotion>();
             _lookYaw = transform.eulerAngles.y;
             if (_cameraRig != null) _baseLocalPos = _cameraRig.localPosition;
         }
@@ -105,20 +106,18 @@ namespace Game.Player
             else
                 _cameraRig.localPosition = _baseLocalPos + _bobOffset;
 
-            // 4) Le root (corps) est orienté sur BodyYaw. Le regard peut diverger : on ajoute
-            //    localement l'écart (LookYaw - BodyYaw) pour que la vue pointe bien vers le regard.
-            float bodyYaw = _body != null ? _body.BodyYaw : _lookYaw;
-            float yawOffset = Mathf.DeltaAngle(bodyYaw, _lookYaw);
-            _cameraRig.localRotation = Quaternion.Euler(_pitch, yawOffset, _currentLean);
+            // 4) Le rig suit la tête physique du ragdoll (position) mais garde une rotation
+            //    INDÉPENDANTE en monde : le regard ne subit pas le ballottement du corps.
+            _cameraRig.rotation = Quaternion.Euler(_pitch, _lookYaw, _currentLean);
         }
 
         private void UpdateHeadBob()
         {
             float speed = 0f;
             bool grounded = false;
-            if (_body != null && _body.Rigidbody != null)
+            if (_body != null)
             {
-                Vector3 vel = _body.Rigidbody.linearVelocity;
+                Vector3 vel = _body.CurrentVelocity;
                 vel.y = 0f;
                 speed = vel.magnitude;
                 grounded = _body.IsGrounded;

@@ -1,4 +1,5 @@
 using Game.Player;
+using Game.Player.Ragdoll;
 using UnityEditor;
 using UnityEngine;
 
@@ -58,18 +59,9 @@ namespace Game.Player.EditorTools
             }
 
             // --- Root Player ---
+            // Pas de Rigidbody/collider sur le root : c'est l'active ragdoll (un Rigidbody par os,
+            // construit par ActiveRagdoll au runtime) qui porte toute la physique.
             var player = new GameObject("Player");
-
-            var rb = player.AddComponent<Rigidbody>();
-            rb.mass = 70f;
-            rb.interpolation = RigidbodyInterpolation.Interpolate;
-            rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-            rb.constraints = RigidbodyConstraints.FreezeRotation;
-
-            var capsule = player.AddComponent<CapsuleCollider>();
-            capsule.height = 1.8f;
-            capsule.radius = 0.3f;
-            capsule.center = new Vector3(0f, 0.9f, 0f);
 
             // --- Modèle Y Bot en enfant (instance de prefab pour garder le lien au FBX) ---
             var modelInstance = (GameObject)PrefabUtility.InstantiatePrefab(model);
@@ -107,6 +99,40 @@ namespace Game.Player.EditorTools
                     r.sharedMaterial = charMat;
             }
 
+            // --- Squelette ANIMÉ invisible (référence que le ragdoll physique va suivre) ---
+            var animRig = (GameObject)PrefabUtility.InstantiatePrefab(model);
+            animRig.name = "AnimRig";
+            animRig.transform.SetParent(player.transform, false);
+            animRig.transform.localPosition = Vector3.zero;
+            animRig.transform.localRotation = Quaternion.identity;
+            foreach (var r in animRig.GetComponentsInChildren<Renderer>(true)) r.enabled = false;
+
+            var animator = animRig.GetComponent<Animator>();
+            if (animator == null) animator = animRig.AddComponent<Animator>();
+            animator.applyRootMotion = true;   // le root motion de marche/course pilote la vitesse
+            animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            animator.updateMode = AnimatorUpdateMode.Fixed;
+            var catcher = animRig.AddComponent<RootMotionCatcher>();
+            var controller = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
+                "Assets/Animations/Player/PlayerLocomotion.controller");
+            if (controller != null)
+            {
+                animator.runtimeAnimatorController = controller;
+            }
+            else
+            {
+                // SANS controller, l'AnimRig ne joue rien -> bones en T-pose -> le corps physique tente
+                // de tenir une T-pose sous gravité (s'enfonce, ne tient pas, n'avance pas). Bloquant.
+                Debug.LogError("[PlayerBuilder] AnimatorController INTROUVABLE : le perso ne pourra ni " +
+                               "s'animer ni bouger. Lance D'ABORD Tools ▸ Dead Island ▸ Build Player Animator, " +
+                               "PUIS reconstruis le Player.");
+                EditorUtility.DisplayDialog("Player Builder — ordre important",
+                    "Aucun AnimatorController trouvé.\n\n" +
+                    "Sans lui, le ragdoll suit une T-pose et ne bouge pas.\n\n" +
+                    "1) Lance D'ABORD : Tools ▸ Dead Island ▸ Build Player Animator\n" +
+                    "2) PUIS relance : Build Player Prefab", "OK");
+            }
+
             // --- CameraRig + Camera ---
             var rig = new GameObject("CameraRig");
             rig.transform.SetParent(player.transform, false);
@@ -115,78 +141,51 @@ namespace Game.Player.EditorTools
             cam.nearClipPlane = 0.05f;
             rig.AddComponent<AudioListener>();
 
-            // --- Bones ---
+            // --- Bones utiles au câblage (le ragdoll résout tous ses os lui-même au runtime) ---
             Transform root = modelInstance.transform;
             Transform head = FindBone(root, "Head");
-            Transform lUpper = FindBone(root, "LeftArm");
-            Transform lFore = FindBone(root, "LeftForeArm");
-            Transform lHand = FindBone(root, "LeftHand");
-            Transform rUpper = FindBone(root, "RightArm");
-            Transform rFore = FindBone(root, "RightForeArm");
-            Transform rHand = FindBone(root, "RightHand");
-
             Transform hips = FindBone(root, "Hips");
-            Transform spine = FindBone(root, "Spine");
-            Transform spine1 = FindBone(root, "Spine1");
-            Transform spine2 = FindBone(root, "Spine2");
-            Transform neck = FindBone(root, "Neck");
-            Transform lUpLeg = FindBone(root, "LeftUpLeg");
-            Transform lLeg = FindBone(root, "LeftLeg");
-            Transform lFoot = FindBone(root, "LeftFoot");
-            Transform rUpLeg = FindBone(root, "RightUpLeg");
-            Transform rLeg = FindBone(root, "RightLeg");
-            Transform rFoot = FindBone(root, "RightFoot");
 
             if (head != null)
                 rig.transform.position = head.position;
 
-            // --- Composants joueur ---
+            // --- Composants joueur (active ragdoll façon PEAK) ---
             player.AddComponent<PlayerInputReader>();
-            var body = player.AddComponent<PlayerBody>();
+            var ragdoll = player.AddComponent<ActiveRagdoll>();   // construit le ragdoll physique au réveil
+            player.AddComponent<AnimatedReference>(); // squelette animé que les joints recopient
+            player.AddComponent<RagdollBalance>();   // tient debout + relevé
+            player.AddComponent<RagdollLocomotion>(); // driver input -> propulsion + saut
+            player.AddComponent<RagdollPoseDriver>(); // recopie la pose animée dans les joints
+            player.AddComponent<HandReach>();        // clic -> main tendue
             var camera = player.AddComponent<PlayerCamera>();
-            var animator = player.AddComponent<PlayerProceduralAnimator>();
-            var hands = player.AddComponent<PlayerHands>();
             var remote = player.AddComponent<RemotePlayer>();
             remote.enabled = false; // dormant ; activé par le réseau uniquement pour les distants
 
             // Survie + mort (faible adhérence : communiquent par événements / registre)
             player.AddComponent<PlayerVitals>();
-            player.AddComponent<PlayerRagdoll>();
             player.AddComponent<SpectatorController>(); // dormant tant que vivant (gardé par _active)
             player.AddComponent<PlayerDeath>();
 
-            // --- Câblage via SerializedObject (champs privés [SerializeField]) ---
+            // --- Câblage caméra (seuls champs à brancher manuellement) ---
             var soCam = new SerializedObject(camera);
             SetRef(soCam, "_cameraRig", rig.transform);
             SetRef(soCam, "_headBone", head);
             soCam.ApplyModifiedPropertiesWithoutUndo();
 
-            var soHands = new SerializedObject(hands);
-            SetRef(soHands, "_leftUpperArm", lUpper);
-            SetRef(soHands, "_leftForeArm", lFore);
-            SetRef(soHands, "_leftHand", lHand);
-            SetRef(soHands, "_rightUpperArm", rUpper);
-            SetRef(soHands, "_rightForeArm", rFore);
-            SetRef(soHands, "_rightHand", rHand);
-            soHands.ApplyModifiedPropertiesWithoutUndo();
+            // ActiveRagdoll cherche ses os UNIQUEMENT dans le modèle visible (pas l'AnimRig).
+            var soRag = new SerializedObject(ragdoll);
+            SetRef(soRag, "_skeletonRoot", modelInstance.transform);
+            soRag.ApplyModifiedPropertiesWithoutUndo();
 
-            var soAnim = new SerializedObject(animator);
-            SetRef(soAnim, "_spine", spine);
-            SetRef(soAnim, "_spine1", spine1);
-            SetRef(soAnim, "_spine2", spine2);
-            SetRef(soAnim, "_neck", neck);
-            SetRef(soAnim, "_head", head);
-            SetRef(soAnim, "_hips", hips);
-            SetRef(soAnim, "_leftUpLeg", lUpLeg);
-            SetRef(soAnim, "_leftLeg", lLeg);
-            SetRef(soAnim, "_leftFoot", lFoot);
-            SetRef(soAnim, "_rightUpLeg", rUpLeg);
-            SetRef(soAnim, "_rightLeg", rLeg);
-            SetRef(soAnim, "_rightFoot", rFoot);
-            soAnim.ApplyModifiedPropertiesWithoutUndo();
+            // AnimatedReference pointe sur l'AnimRig invisible.
+            var soRef = new SerializedObject(player.GetComponent<AnimatedReference>());
+            SetRef(soRef, "_animator", animator);
+            SetRef(soRef, "_animRoot", animRig.transform);
+            SetRef(soRef, "_catcher", catcher);
+            soRef.ApplyModifiedPropertiesWithoutUndo();
 
-            // Avertit si des bones manquent (noms inattendus).
-            WarnMissing(head, lUpper, lFore, lHand, rUpper, rFore, rHand);
+            if (hips == null)
+                Debug.LogWarning("[PlayerBuilder] Os 'Hips' introuvable — l'active ragdoll ne pourra pas se construire.");
 
             return player;
         }
@@ -232,16 +231,6 @@ namespace Game.Player.EditorTools
                     return t;
             }
             return null;
-        }
-
-        private static void WarnMissing(params Transform[] bones)
-        {
-            string[] names = { "Head", "LeftArm", "LeftForeArm", "LeftHand", "RightArm", "RightForeArm", "RightHand" };
-            for (int i = 0; i < bones.Length; i++)
-            {
-                if (bones[i] == null)
-                    Debug.LogWarning($"[PlayerBuilder] Bone non résolu : {names[i]} — à assigner à la main.");
-            }
         }
     }
 }
