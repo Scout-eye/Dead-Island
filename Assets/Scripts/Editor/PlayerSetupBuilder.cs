@@ -1,30 +1,23 @@
 using Game.Player;
-using Game.Player.Ragdoll;
 using UnityEditor;
 using UnityEngine;
 
 namespace Game.Player.EditorTools
 {
     /// <summary>
-    /// Outil éditeur : construit un GameObject "Player" complet à partir du modèle Y Bot (Mixamo),
-    /// câble tous les composants de l'étape 1 et résout automatiquement les bones (préfixe
-    /// "mixamorig:" géré). Évite tout drag&drop manuel.
+    /// Construit le prefab joueur PREMIÈRE PERSONNE à partir du modèle Y Bot (Mixamo) et câble tous
+    /// les composants : CharacterController + caméra FPS + avatar animé (idle/marche/course).
     ///
-    /// Menu : Tools ▸ Dead Island ▸ Build Player From Y Bot.
+    /// Hiérarchie produite :
+    ///   Player (CharacterController + FirstPersonController + PlayerCamera + PlayerAnimator + …)
+    ///   ├─ Model (Y Bot + Animator)         -> avatar visible (caché pour le joueur local)
+    ///   └─ CameraRig (Camera + AudioListener) -> vue à hauteur des yeux
+    ///
+    /// Menu : Tools ▸ Dead Island ▸ Build Player Prefab (Resources).
     /// </summary>
     public static class PlayerSetupBuilder
     {
         private const string YBotPath = "Assets/Models/Characters/Y Bot.fbx";
-
-        [MenuItem("Tools/Dead Island/Build Player From Y Bot")]
-        public static void BuildPlayer()
-        {
-            var player = BuildPlayerObject();
-            if (player == null) return;
-            Selection.activeGameObject = player;
-            EditorGUIUtility.PingObject(player);
-            Debug.Log("[PlayerBuilder] Player construit dans la scène. Règle le LayerMask (GroundMask de PlayerBody).", player);
-        }
 
         [MenuItem("Tools/Dead Island/Build Player Prefab (Resources)")]
         public static void BuildPlayerPrefab()
@@ -41,7 +34,7 @@ namespace Game.Player.EditorTools
 
             if (prefab != null)
             {
-                Debug.Log($"[PlayerBuilder] Prefab sauvegardé : {path} (chargé par NetworkManager).", prefab);
+                Debug.Log($"[PlayerBuilder] Prefab FPS sauvegardé : {path} (chargé par NetworkManager).", prefab);
                 Selection.activeObject = prefab;
                 EditorGUIUtility.PingObject(prefab);
             }
@@ -53,26 +46,94 @@ namespace Game.Player.EditorTools
             var model = AssetDatabase.LoadAssetAtPath<GameObject>(YBotPath);
             if (model == null)
             {
-                EditorUtility.DisplayDialog("Player Builder",
-                    $"Modèle introuvable à :\n{YBotPath}", "OK");
+                EditorUtility.DisplayDialog("Player Builder", $"Modèle introuvable à :\n{YBotPath}", "OK");
                 return null;
             }
 
-            // --- Root Player ---
-            // Pas de Rigidbody/collider sur le root : c'est l'active ragdoll (un Rigidbody par os,
-            // construit par ActiveRagdoll au runtime) qui porte toute la physique.
+            // --- Root Player + CharacterController ---
             var player = new GameObject("Player");
+            var cc = player.AddComponent<CharacterController>();
+            cc.height = 1.8f;
+            cc.radius = 0.3f;
+            cc.center = new Vector3(0f, 0.9f, 0f);
+            cc.slopeLimit = 50f;
+            cc.stepOffset = 0.35f;
+            cc.skinWidth = 0.02f;
 
-            // --- Modèle Y Bot en enfant (instance de prefab pour garder le lien au FBX) ---
+            // --- Modèle Y Bot (avatar visible) ---
             var modelInstance = (GameObject)PrefabUtility.InstantiatePrefab(model);
+            modelInstance.name = "Model";
             modelInstance.transform.SetParent(player.transform, false);
             modelInstance.transform.localPosition = Vector3.zero;
             modelInstance.transform.localRotation = Quaternion.identity;
+            ApplyCharacterMaterial(modelInstance);
 
-            // Matériau perso avec écume partagée (même système que le rivage).
-            // IMPORTANT : matériau-ASSET (pas new Material runtime), sinon le prefab perd la
-            // référence à l'enregistrement -> personnage magenta.
-            // On récupère texture + couleur d'origine du modèle pour conserver son apparence.
+            // Animator de l'avatar (blend idle/marche/course, EN PLACE).
+            var animator = modelInstance.GetComponent<Animator>();
+            if (animator == null) animator = modelInstance.AddComponent<Animator>();
+            animator.applyRootMotion = false;
+            animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            AssignLocomotionController(animator);
+
+            // --- CameraRig + Camera (hauteur des yeux) ---
+            var rig = new GameObject("CameraRig");
+            rig.transform.SetParent(player.transform, false);
+            rig.transform.localPosition = new Vector3(0f, 1.65f, 0.1f);
+            var cam = rig.AddComponent<Camera>();
+            cam.nearClipPlane = 0.05f;
+            rig.AddComponent<AudioListener>();
+
+            // --- Composants joueur (FPS) ---
+            player.AddComponent<PlayerInputReader>();
+            player.AddComponent<FirstPersonController>(); // déplacement
+            var camera = player.AddComponent<PlayerCamera>();   // regard
+            var anim = player.AddComponent<PlayerAnimator>();    // anim avatar
+            player.AddComponent<FirstPersonView>();              // cache la tête en local
+            var remote = player.AddComponent<RemotePlayer>();
+            remote.enabled = false; // dormant ; activé par le réseau pour les distants
+
+            player.AddComponent<PlayerVitals>();
+            player.AddComponent<SpectatorController>();
+            player.AddComponent<PlayerDeath>();
+
+            // --- Câblage ---
+            var soCam = new SerializedObject(camera);
+            SetRef(soCam, "_cameraRig", rig.transform);
+            soCam.ApplyModifiedPropertiesWithoutUndo();
+
+            var soAnim = new SerializedObject(anim);
+            SetRef(soAnim, "_animator", animator);
+            soAnim.ApplyModifiedPropertiesWithoutUndo();
+
+            return player;
+        }
+
+        private static void AssignLocomotionController(Animator animator)
+        {
+            var controller = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(PlayerAnimatorBuilder.ControllerPath);
+            if (controller == null)
+            {
+                Debug.Log("[PlayerBuilder] Controller absent -> génération automatique de l'Animator…");
+                PlayerAnimatorBuilder.BuildAnimator();
+                AssetDatabase.Refresh();
+                controller = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(PlayerAnimatorBuilder.ControllerPath);
+            }
+
+            if (controller != null)
+            {
+                animator.runtimeAnimatorController = controller;
+                Debug.Log($"[PlayerBuilder] ✓ Controller assigné à l'avatar : {controller.name}", controller);
+            }
+            else
+            {
+                Debug.LogError("[PlayerBuilder] AnimatorController introuvable : l'avatar restera en T-pose. " +
+                               "Vérifie les clips dans Assets/Animations/Player/ (idle/walk/run).");
+            }
+        }
+
+        /// <summary>Applique le matériau perso (écume partagée) en conservant texture/teinte d'origine.</summary>
+        private static void ApplyCharacterMaterial(GameObject modelInstance)
+        {
             Texture srcTex = null;
             Color srcColor = Color.white;
             foreach (var r in modelInstance.GetComponentsInChildren<Renderer>(true))
@@ -87,107 +148,15 @@ namespace Game.Player.EditorTools
             }
 
             var charMat = GetOrCreateCharacterMaterial();
-            if (charMat != null)
-            {
-                if (srcTex != null) charMat.SetTexture("_BaseMap", srcTex);
-                // Teinte : couleur d'origine (ou blanc si une texture porte déjà la couleur).
-                charMat.SetColor("_BaseColor", srcTex != null ? Color.white : srcColor);
-                EditorUtility.SetDirty(charMat);
-                AssetDatabase.SaveAssets();
+            if (charMat == null) return;
 
-                foreach (var r in modelInstance.GetComponentsInChildren<Renderer>(true))
-                    r.sharedMaterial = charMat;
-            }
+            if (srcTex != null) charMat.SetTexture("_BaseMap", srcTex);
+            charMat.SetColor("_BaseColor", srcTex != null ? Color.white : srcColor);
+            EditorUtility.SetDirty(charMat);
+            AssetDatabase.SaveAssets();
 
-            // --- Squelette ANIMÉ invisible (référence que le ragdoll physique va suivre) ---
-            var animRig = (GameObject)PrefabUtility.InstantiatePrefab(model);
-            animRig.name = "AnimRig";
-            animRig.transform.SetParent(player.transform, false);
-            animRig.transform.localPosition = Vector3.zero;
-            animRig.transform.localRotation = Quaternion.identity;
-            foreach (var r in animRig.GetComponentsInChildren<Renderer>(true)) r.enabled = false;
-
-            var animator = animRig.GetComponent<Animator>();
-            if (animator == null) animator = animRig.AddComponent<Animator>();
-            animator.applyRootMotion = true;   // le root motion de marche/course pilote la vitesse
-            animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
-            animator.updateMode = AnimatorUpdateMode.Fixed;
-            var catcher = animRig.AddComponent<RootMotionCatcher>();
-            var controller = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(
-                "Assets/Animations/Player/PlayerLocomotion.controller");
-            if (controller != null)
-            {
-                animator.runtimeAnimatorController = controller;
-            }
-            else
-            {
-                // SANS controller, l'AnimRig ne joue rien -> bones en T-pose -> le corps physique tente
-                // de tenir une T-pose sous gravité (s'enfonce, ne tient pas, n'avance pas). Bloquant.
-                Debug.LogError("[PlayerBuilder] AnimatorController INTROUVABLE : le perso ne pourra ni " +
-                               "s'animer ni bouger. Lance D'ABORD Tools ▸ Dead Island ▸ Build Player Animator, " +
-                               "PUIS reconstruis le Player.");
-                EditorUtility.DisplayDialog("Player Builder — ordre important",
-                    "Aucun AnimatorController trouvé.\n\n" +
-                    "Sans lui, le ragdoll suit une T-pose et ne bouge pas.\n\n" +
-                    "1) Lance D'ABORD : Tools ▸ Dead Island ▸ Build Player Animator\n" +
-                    "2) PUIS relance : Build Player Prefab", "OK");
-            }
-
-            // --- CameraRig + Camera ---
-            var rig = new GameObject("CameraRig");
-            rig.transform.SetParent(player.transform, false);
-            rig.transform.localPosition = new Vector3(0f, 1.65f, 0f);
-            var cam = rig.AddComponent<Camera>();
-            cam.nearClipPlane = 0.05f;
-            rig.AddComponent<AudioListener>();
-
-            // --- Bones utiles au câblage (le ragdoll résout tous ses os lui-même au runtime) ---
-            Transform root = modelInstance.transform;
-            Transform head = FindBone(root, "Head");
-            Transform hips = FindBone(root, "Hips");
-
-            if (head != null)
-                rig.transform.position = head.position;
-
-            // --- Composants joueur (active ragdoll façon PEAK) ---
-            player.AddComponent<PlayerInputReader>();
-            var ragdoll = player.AddComponent<ActiveRagdoll>();   // construit le ragdoll physique au réveil
-            player.AddComponent<AnimatedReference>(); // squelette animé que les joints recopient
-            player.AddComponent<RagdollBalance>();   // tient debout + relevé
-            player.AddComponent<RagdollLocomotion>(); // driver input -> propulsion + saut
-            player.AddComponent<RagdollPoseDriver>(); // recopie la pose animée dans les joints
-            player.AddComponent<HandReach>();        // clic -> main tendue
-            var camera = player.AddComponent<PlayerCamera>();
-            var remote = player.AddComponent<RemotePlayer>();
-            remote.enabled = false; // dormant ; activé par le réseau uniquement pour les distants
-
-            // Survie + mort (faible adhérence : communiquent par événements / registre)
-            player.AddComponent<PlayerVitals>();
-            player.AddComponent<SpectatorController>(); // dormant tant que vivant (gardé par _active)
-            player.AddComponent<PlayerDeath>();
-
-            // --- Câblage caméra (seuls champs à brancher manuellement) ---
-            var soCam = new SerializedObject(camera);
-            SetRef(soCam, "_cameraRig", rig.transform);
-            SetRef(soCam, "_headBone", head);
-            soCam.ApplyModifiedPropertiesWithoutUndo();
-
-            // ActiveRagdoll cherche ses os UNIQUEMENT dans le modèle visible (pas l'AnimRig).
-            var soRag = new SerializedObject(ragdoll);
-            SetRef(soRag, "_skeletonRoot", modelInstance.transform);
-            soRag.ApplyModifiedPropertiesWithoutUndo();
-
-            // AnimatedReference pointe sur l'AnimRig invisible.
-            var soRef = new SerializedObject(player.GetComponent<AnimatedReference>());
-            SetRef(soRef, "_animator", animator);
-            SetRef(soRef, "_animRoot", animRig.transform);
-            SetRef(soRef, "_catcher", catcher);
-            soRef.ApplyModifiedPropertiesWithoutUndo();
-
-            if (hips == null)
-                Debug.LogWarning("[PlayerBuilder] Os 'Hips' introuvable — l'active ragdoll ne pourra pas se construire.");
-
-            return player;
+            foreach (var r in modelInstance.GetComponentsInChildren<Renderer>(true))
+                r.sharedMaterial = charMat;
         }
 
         private static Material GetOrCreateCharacterMaterial()
@@ -215,22 +184,6 @@ namespace Game.Player.EditorTools
             var prop = so.FindProperty(property);
             if (prop != null) prop.objectReferenceValue = value;
             else Debug.LogWarning($"[PlayerBuilder] Champ sérialisé introuvable : {property}");
-        }
-
-        /// <summary>
-        /// Recherche récursive d'un bone par nom, en ignorant un éventuel préfixe "namespace:".
-        /// </summary>
-        private static Transform FindBone(Transform root, string boneName)
-        {
-            foreach (var t in root.GetComponentsInChildren<Transform>(true))
-            {
-                string n = t.name;
-                int colon = n.IndexOf(':');
-                if (colon >= 0) n = n.Substring(colon + 1);
-                if (string.Equals(n, boneName, System.StringComparison.OrdinalIgnoreCase))
-                    return t;
-            }
-            return null;
         }
     }
 }

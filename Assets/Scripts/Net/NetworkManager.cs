@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Game.Player;
-using Game.Player.Ragdoll;
 using Game.World;
 using Steamworks;
 using Steamworks.Data;
@@ -43,9 +42,8 @@ namespace Game.Net
         private bool _running;
 
         private GameObject _localPlayer;
-        private RagdollLocomotion _localBody;
+        private FirstPersonController _localBody;
         private PlayerCamera _localCam;
-        private HandReach _localHands;
         private PlayerVitals _localVitals;
 
         private bool _worldBuilt;
@@ -111,7 +109,7 @@ namespace Game.Net
         public void ReturnToRoom()
         {
             if (_localPlayer != null) Destroy(_localPlayer);
-            _localPlayer = null; _localBody = null; _localCam = null; _localHands = null; _localVitals = null;
+            _localPlayer = null; _localBody = null; _localCam = null; _localVitals = null;
 
             foreach (var kv in _remotes)
                 if (kv.Value != null) Destroy(kv.Value.gameObject);
@@ -150,7 +148,6 @@ namespace Game.Net
             _localPlayer = null;
             _localBody = null;
             _localCam = null;
-            _localHands = null;
             _localVitals = null;
 
             foreach (var kv in _remotes)
@@ -242,8 +239,6 @@ namespace Game.Net
                 Yaw = _localBody.BodyYaw,
                 Pitch = _localCam != null ? _localCam.Pitch : 0f,
                 Velocity = _localBody.NetworkVelocity,
-                LeftHandTarget = _localHands != null ? _localHands.LeftHandTarget : Vector3.zero,
-                RightHandTarget = _localHands != null ? _localHands.RightHandTarget : Vector3.zero,
                 Dead = _localVitals != null && _localVitals.IsDead
             };
         }
@@ -328,9 +323,8 @@ namespace Game.Net
             _localPlayer = Instantiate(prefab, ComputeSpawn(index), Quaternion.identity);
             _localPlayer.name = "Player (Local)";
             ConfigurePlayer(_localPlayer, owner: true);
-            _localBody = _localPlayer.GetComponent<RagdollLocomotion>();
+            _localBody = _localPlayer.GetComponent<FirstPersonController>();
             _localCam = _localPlayer.GetComponent<PlayerCamera>();
-            _localHands = _localPlayer.GetComponent<HandReach>();
             _localVitals = _localPlayer.GetComponent<PlayerVitals>();
         }
 
@@ -360,7 +354,7 @@ namespace Game.Net
 
         private static void ConfigurePlayer(GameObject go, bool owner)
         {
-            var body = go.GetComponent<RagdollLocomotion>();
+            var body = go.GetComponent<FirstPersonController>();
             if (body != null) body.SetOwner(owner);
 
             SetEnabled(go.GetComponent<PlayerInputReader>(), owner);
@@ -372,6 +366,7 @@ namespace Game.Net
             if (cam != null) cam.enabled = owner;
             var listener = go.GetComponentInChildren<AudioListener>(true);
             if (listener != null) listener.enabled = owner;
+            // L'avatar local reste visible (on voit son corps) ; FirstPersonView cache juste la tête.
         }
 
         private static void SetEnabled(Behaviour b, bool enabled)

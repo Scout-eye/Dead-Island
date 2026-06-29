@@ -7,10 +7,12 @@
       "Bash(mv \"Y Bot@Walking.fbx.meta\" \"Walk.fbx.meta\")",
       "Bash(mv \"Y Bot@Running.fbx\" \"Run.fbx\")",
       "WebFetch(domain:docs.unity3d.com)",
-      "Bash(cd \"c:/Users/cleme/.claude/projects/c--dev-Unity-Dead-Island/memory\" && rm -f MEMORY.md peak-active-ragdoll-rework.md && echo \"supprimés :\" && ls -1)"
+      "Bash(cd \"c:/Users/cleme/.claude/projects/c--dev-Unity-Dead-Island/memory\" && rm -f MEMORY.md peak-active-ragdoll-rework.md && echo \"supprimés :\" && ls -1)",
+      "Bash(cd \"c:/dev/Unity/Dead-Island\" && mkdir -p PhysicsController_Archive/Ragdoll PhysicsController_Archive/Editor && cp Assets/Scripts/Player/Ragdoll/*.cs PhysicsController_Archive/Ragdoll/ && cp Assets/Scripts/Editor/PlayerSetupBuilder.cs Assets/Scripts/Editor/PlayerAnimatorBuilder.cs PhysicsController_Archive/Editor/ && cp RAGDOLL_SESSION_NOTES.md PhysicsController_Archive/ && echo \"=== Archive ===\" && ls -1 PhysicsController_Archive/Ragdoll/ && echo \"--- Editor ---\" && ls -1 PhysicsController_Archive/Editor/)"
     ],
     "additionalDirectories": [
-      "c:\\Users\\cleme\\.claude\\projects\\c--dev-Unity-Dead-Island\\memory"
+      "c:\\Users\\cleme\\.claude\\projects\\c--dev-Unity-Dead-Island\\memory",
+      "c:\\dev\\Unity\\Dead-Island\\Assets\\Scripts\\Player\\Ragdoll"
     ]
   }
 }

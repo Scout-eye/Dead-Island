@@ -4,25 +4,20 @@ using UnityEngine;
 namespace Game.Player
 {
     /// <summary>
-    /// Snapshot réseau complet d'un joueur à un instant donné.
+    /// Snapshot réseau d'un joueur à un instant donné. C'est LE contrat de synchro owner -> remote :
+    /// le owner le remplit depuis son controller local, le remote l'interpole et le rejoue.
     ///
-    /// C'est LE contrat de synchro entre owner et remote. Le owner remplit ce state à partir
-    /// de sa simulation physique locale ; le remote le reçoit et interpole / rejoue l'IK.
-    /// On ne synchronise jamais les forces ou les joints : uniquement le résultat (ce struct).
-    ///
-    /// Sérialisé en binaire compact pour envoi via Steamworks (étape 2). Layout fixe.
+    /// Sérialisé en binaire compact pour Steamworks. Layout fixe.
     /// </summary>
     [Serializable]
     public struct PlayerState
     {
-        public uint Tick;             // numéro de simulation, pour l'ordre + buffer d'interpolation
-        public Vector3 Position;      // position monde du Rigidbody
-        public float Yaw;             // rotation horizontale du corps (degrés)
-        public float Pitch;           // rotation verticale de la tête/caméra (degrés), utile à l'IK distante
-        public Vector3 Velocity;      // vélocité linéaire, pour l'extrapolation côté remote
-        public Vector3 LeftHandTarget;  // cible monde de la main gauche (IK)
-        public Vector3 RightHandTarget; // cible monde de la main droite (IK)
-        public bool Dead;               // état de mort (pour ragdoll distant + détection "tous morts")
+        public uint Tick;        // numéro de simulation (ordre + buffer d'interpolation)
+        public Vector3 Position; // position monde
+        public float Yaw;        // rotation horizontale du corps (degrés)
+        public float Pitch;      // inclinaison du regard (degrés) — anime la tête distante
+        public Vector3 Velocity; // vélocité (extrapolation + animation distante)
+        public bool Dead;        // état de mort (spectate + détection "tous morts")
 
         /// <summary>Taille fixe en octets d'un state sérialisé.</summary>
         public const int Size = sizeof(uint)        // Tick
@@ -30,8 +25,6 @@ namespace Game.Player
                               + sizeof(float)        // Yaw
                               + sizeof(float)        // Pitch
                               + sizeof(float) * 3    // Velocity
-                              + sizeof(float) * 3    // LeftHandTarget
-                              + sizeof(float) * 3    // RightHandTarget
                               + sizeof(byte);        // Dead
 
         public byte[] Serialize()
@@ -50,8 +43,6 @@ namespace Game.Player
             o = Write(buffer, o, Yaw);
             o = Write(buffer, o, Pitch);
             o = Write(buffer, o, Velocity.x); o = Write(buffer, o, Velocity.y); o = Write(buffer, o, Velocity.z);
-            o = Write(buffer, o, LeftHandTarget.x); o = Write(buffer, o, LeftHandTarget.y); o = Write(buffer, o, LeftHandTarget.z);
-            o = Write(buffer, o, RightHandTarget.x); o = Write(buffer, o, RightHandTarget.y); o = Write(buffer, o, RightHandTarget.z);
             buffer[o++] = (byte)(Dead ? 1 : 0);
             return o;
         }
@@ -65,8 +56,6 @@ namespace Game.Player
             s.Yaw = BitConverter.ToSingle(buffer, o); o += sizeof(float);
             s.Pitch = BitConverter.ToSingle(buffer, o); o += sizeof(float);
             s.Velocity = ReadVector3(buffer, ref o);
-            s.LeftHandTarget = ReadVector3(buffer, ref o);
-            s.RightHandTarget = ReadVector3(buffer, ref o);
             s.Dead = buffer[o++] != 0;
             return s;
         }

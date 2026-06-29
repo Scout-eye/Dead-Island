@@ -1,27 +1,22 @@
 using UnityEngine;
-using Game.Player.Ragdoll;
 
 namespace Game.Player
 {
     /// <summary>
-    /// Caméra FPS procédurale.
-    ///   - Souris X  -> yaw du regard (LookYaw), lu par la locomotion pour orienter le corps.
-    ///   - Souris Y  -> pitch, appliqué uniquement au CameraRig (clampé).
-    ///   - Head bob  -> oscillation procédurale basée sur la vélocité du bassin (zéro keyframe).
-    ///   - Lean      -> légère inclinaison (roll) quand on strafe.
+    /// Caméra première personne classique :
+    ///   - Souris X -> yaw, appliqué au CORPS (le joueur tourne sur lui-même).
+    ///   - Souris Y -> pitch, appliqué uniquement au CameraRig (clampé).
+    ///   - Head bob léger basé sur la vitesse de déplacement (zéro keyframe).
     ///
-    /// Le CameraRig suit la position de la tête du modèle Mixamo (headBone) si elle est fournie,
-    /// pour rester collé au modèle tout en gardant une rotation indépendante.
+    /// Responsabilité unique : regarder/tourner. Le déplacement est géré par
+    /// <see cref="FirstPersonController"/>. N'actif que pour le joueur local.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class PlayerCamera : MonoBehaviour
     {
         [Header("Références")]
-        [Tooltip("Transform pivot de la caméra (enfant du root). Reçoit le pitch + bob + lean.")]
+        [Tooltip("Pivot caméra (enfant, à hauteur des yeux). Reçoit le pitch + le bob.")]
         [SerializeField] private Transform _cameraRig;
-        [Tooltip("Os 'Head' du Mixamo. Optionnel : si défini, le rig suit sa position.")]
-        [SerializeField] private Transform _headBone;
-        [SerializeField] private Vector3 _headLocalOffset = new Vector3(0f, 0.1f, 0.05f);
 
         [Header("Sensibilité")]
         [SerializeField] private float _mouseSensitivity = 0.12f;
@@ -30,120 +25,94 @@ namespace Game.Player
 
         [Header("Head bob")]
         [SerializeField] private float _bobFrequency = 9f;
-        [SerializeField] private float _bobAmplitude = 0.05f;
+        [SerializeField] private float _bobAmplitude = 0.045f;
         [SerializeField] private float _bobSmoothing = 10f;
 
-        [Header("Lean")]
-        [SerializeField] private float _leanAngle = 3f;
-        [SerializeField] private float _leanSmoothing = 8f;
+        [Header("Accroupi")]
+        [Tooltip("De combien l'œil descend quand on est accroupi (m).")]
+        [SerializeField] private float _crouchEyeDrop = 0.6f;
 
         private PlayerInputReader _input;
-        private RagdollLocomotion _body;
+        private FirstPersonController _controller;
 
-        private float _lookYaw;
+        private float _yaw;
         private float _pitch;
         private float _bobTimer;
         private Vector3 _bobOffset;
-        private float _currentLean;
-        private Vector3 _baseLocalPos;
+        private Vector3 _rigBaseLocalPos;
 
-        /// <summary>Orientation du regard (degrés monde). Peut diverger du corps (BodyYaw).</summary>
-        public float LookYaw => _lookYaw;
+        /// <summary>Orientation horizontale du regard (= du corps en FPS).</summary>
+        public float LookYaw => _yaw;
         public float Pitch => _pitch;
         public Transform CameraRig => _cameraRig;
 
-        /// <summary>Force le regard depuis le réseau (remote). Owner : non utilisé.</summary>
-        public void SetNetworkLook(float lookYaw, float pitch)
+        /// <summary>Remote : impose le regard reçu du réseau (pour l'inclinaison de la tête distante).</summary>
+        public void SetNetworkLook(float yaw, float pitch)
         {
-            _lookYaw = lookYaw;
+            _yaw = yaw;
             _pitch = pitch;
         }
 
         private void Awake()
         {
             _input = GetComponent<PlayerInputReader>();
-            _body = GetComponent<RagdollLocomotion>();
-            _lookYaw = transform.eulerAngles.y;
-            if (_cameraRig != null) _baseLocalPos = _cameraRig.localPosition;
+            _controller = GetComponent<FirstPersonController>();
+            _yaw = transform.eulerAngles.y;
+            if (_cameraRig != null) _rigBaseLocalPos = _cameraRig.localPosition;
         }
 
         private void OnEnable()
         {
-            if (_body != null && _body.IsOwner)
-                LockCursor(true);
+            if (_controller == null || _controller.IsOwner) LockCursor(true);
         }
 
         private void OnDisable() => LockCursor(false);
 
         private void Update()
         {
-            if (_body == null || !_body.IsOwner) return;
-
-            // Le curseur est géré par le menu pause (Échap). Si déverrouillé (en pause), on ne tourne pas.
-            if (Cursor.lockState != CursorLockMode.Locked) return;
+            if (_controller != null && !_controller.IsOwner) return;
+            if (Cursor.lockState != CursorLockMode.Locked) return; // pause : on ne tourne pas
 
             Vector2 look = _input != null ? _input.Look : Vector2.zero;
-            _lookYaw += look.x * _mouseSensitivity;
+            _yaw += look.x * _mouseSensitivity;
             _pitch = Mathf.Clamp(_pitch - look.y * _mouseSensitivity, _minPitch, _maxPitch);
+
+            // Le yaw tourne le CORPS (le controller se déplace relatif à transform.forward).
+            transform.rotation = Quaternion.Euler(0f, _yaw, 0f);
         }
 
         private void LateUpdate()
         {
             if (_cameraRig == null) return;
-
-            // 2) Head bob basé sur la vitesse horizontale réelle du Rigidbody.
             UpdateHeadBob();
-
-            // 3) Lean basé sur le strafe.
-            UpdateLean();
-
-            // 1) Position : suit la tête du modèle si dispo, sinon reste à sa position de base.
-            //    Le bob est ajouté par-dessus (jamais accumulé).
-            if (_headBone != null)
-                _cameraRig.position = _headBone.position
-                                      + _cameraRig.parent.TransformVector(_headLocalOffset)
-                                      + _cameraRig.parent.TransformVector(_bobOffset);
-            else
-                _cameraRig.localPosition = _baseLocalPos + _bobOffset;
-
-            // 4) Le rig suit la tête physique du ragdoll (position) mais garde une rotation
-            //    INDÉPENDANTE en monde : le regard ne subit pas le ballottement du corps.
-            _cameraRig.rotation = Quaternion.Euler(_pitch, _lookYaw, _currentLean);
+            float crouch = _controller != null ? _controller.CrouchFactor : 0f;
+            _cameraRig.localPosition = _rigBaseLocalPos + _bobOffset - Vector3.up * (_crouchEyeDrop * crouch);
+            _cameraRig.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
         }
 
         private void UpdateHeadBob()
         {
             float speed = 0f;
             bool grounded = false;
-            if (_body != null)
+            if (_controller != null)
             {
-                Vector3 vel = _body.CurrentVelocity;
-                vel.y = 0f;
-                speed = vel.magnitude;
-                grounded = _body.IsGrounded;
+                Vector3 v = _controller.CurrentVelocity; v.y = 0f;
+                speed = v.magnitude;
+                grounded = _controller.IsGrounded;
             }
 
             Vector3 target = Vector3.zero;
             if (grounded && speed > 0.5f)
             {
                 _bobTimer += Time.deltaTime * _bobFrequency * Mathf.Clamp01(speed / 6f);
-                float vertical = Mathf.Sin(_bobTimer) * _bobAmplitude;
-                float horizontal = Mathf.Cos(_bobTimer * 0.5f) * _bobAmplitude * 0.5f;
-                target = new Vector3(horizontal, vertical, 0f);
+                target = new Vector3(Mathf.Cos(_bobTimer * 0.5f) * _bobAmplitude * 0.5f,
+                                     Mathf.Sin(_bobTimer) * _bobAmplitude, 0f);
             }
             else
             {
                 _bobTimer = 0f;
             }
-
             _bobOffset = Vector3.Lerp(_bobOffset, target, Time.deltaTime * _bobSmoothing);
-        }
-
-        private void UpdateLean()
-        {
-            float strafe = _input != null ? _input.Move.x : 0f;
-            float targetLean = -strafe * _leanAngle;
-            _currentLean = Mathf.Lerp(_currentLean, targetLean, Time.deltaTime * _leanSmoothing);
         }
 
         private static void LockCursor(bool locked)

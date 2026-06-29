@@ -18,8 +18,8 @@ namespace Game.Player.Ragdoll
         [Header("Poursuite de position (le bassin suit le bassin ANIMÉ)")]
         [Tooltip("Raideur de la poursuite : tire le bassin physique vers la position du bassin animé. " +
                  "C'est ce qui déplace ET porte le corps (les pieds prennent le poids via la collision).")]
-        [SerializeField] private float _followSpring = 220f;
-        [SerializeField] private float _followDamper = 28f;
+        [SerializeField] private float _followSpring = 450f;
+        [SerializeField] private float _followDamper = 45f;
 
         [Header("Sonde de sol")]
         [Tooltip("Portée de la sonde sous le bassin pour l'état 'au sol' (m).")]
@@ -31,8 +31,8 @@ namespace Game.Player.Ragdoll
         [SerializeField] private LayerMask _groundMask = ~0;
 
         [Header("Couple de posture (oriente / se redresse)")]
-        [SerializeField] private float _uprightSpring = 130f;
-        [SerializeField] private float _uprightDamper = 24f;
+        [SerializeField] private float _uprightSpring = 320f;
+        [SerializeField] private float _uprightDamper = 36f;
         [Tooltip("Sous cet angle d'inclinaison, le perso est considéré DEBOUT (peut marcher).")]
         [SerializeField] private float _uprightAngle = 35f;
         [Tooltip("Au-dessus de cet angle, le perso est considéré TOMBÉ : il devient ragdoll puis tente de se relever.")]
@@ -60,6 +60,9 @@ namespace Game.Player.Ragdoll
         public bool IsGrounded => _grounded;
         /// <summary>Vrai quand le corps est debout et stable (sinon il doit d'abord se relever).</summary>
         public bool IsUpright => !_downed && _tilt < _uprightAngle;
+        // Lecture seule pour le debug overlay.
+        public float Tilt => _tilt;
+        public bool IsDowned => _downed;
 
         public void SetOwner(bool owner) => _isOwner = owner;
 

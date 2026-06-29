@@ -19,12 +19,16 @@ namespace Game.Player
         private InputAction _look;
         private InputAction _jump;
         private InputAction _sprint;
+        private InputAction _crouch;
+        private InputAction _interact;
 
         // --- Valeurs lues, exposées aux autres composants ---
         public Vector2 Move { get; private set; }
         public Vector2 Look { get; private set; }
         public bool JumpPressedThisFrame { get; private set; }
         public bool SprintHeld { get; private set; }
+        public bool CrouchHeld { get; private set; }
+        public bool InteractPressedThisFrame { get; private set; }
 
         private void Awake()
         {
@@ -47,6 +51,15 @@ namespace Game.Player
             _sprint = new InputAction("Sprint", InputActionType.Button);
             _sprint.AddBinding("<Keyboard>/leftShift");
             _sprint.AddBinding("<Gamepad>/leftStickPress");
+
+            _crouch = new InputAction("Crouch", InputActionType.Button);
+            _crouch.AddBinding("<Keyboard>/leftCtrl");
+            _crouch.AddBinding("<Keyboard>/c");
+            _crouch.AddBinding("<Gamepad>/buttonEast");
+
+            _interact = new InputAction("Interact", InputActionType.Button);
+            _interact.AddBinding("<Keyboard>/e");
+            _interact.AddBinding("<Gamepad>/buttonWest");
         }
 
         private void OnEnable()
@@ -55,6 +68,8 @@ namespace Game.Player
             _look.Enable();
             _jump.Enable();
             _sprint.Enable();
+            _crouch.Enable();
+            _interact.Enable();
         }
 
         private void OnDisable()
@@ -63,6 +78,8 @@ namespace Game.Player
             _look.Disable();
             _jump.Disable();
             _sprint.Disable();
+            _crouch.Disable();
+            _interact.Disable();
         }
 
         private void Update()
@@ -71,6 +88,8 @@ namespace Game.Player
             Look = _look.ReadValue<Vector2>();
             JumpPressedThisFrame = _jump.WasPressedThisFrame();
             SprintHeld = _sprint.IsPressed();
+            CrouchHeld = _crouch.IsPressed();
+            InteractPressedThisFrame = _interact.WasPressedThisFrame();
         }
 
         private void OnDestroy()
@@ -79,6 +98,8 @@ namespace Game.Player
             _look?.Dispose();
             _jump?.Dispose();
             _sprint?.Dispose();
+            _crouch?.Dispose();
+            _interact?.Dispose();
         }
     }
 }

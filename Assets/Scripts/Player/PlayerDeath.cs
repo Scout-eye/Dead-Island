@@ -1,25 +1,21 @@
 using UnityEngine;
-using Game.Player.Ragdoll;
 
 namespace Game.Player
 {
     /// <summary>
-    /// Réaction à la mort (sur le même GameObject que PlayerVitals) : coupe la "musculature" de
-    /// l'active ragdoll (il s'effondre en ragdoll passif) et désactive les contrôleurs ; pour le
-    /// joueur LOCAL bascule en mode spectateur. Glue minimale — ne référence que des composants
-    /// locaux, communique par l'événement PlayerVitals.Died.
+    /// Réaction à la mort (sur le même GameObject que PlayerVitals) : désactive le controller, la
+    /// caméra et l'input ; pour le joueur LOCAL bascule en mode spectateur. Glue minimale — ne
+    /// référence que des composants locaux, communique par l'événement PlayerVitals.Died.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class PlayerDeath : MonoBehaviour
     {
         private PlayerVitals _vitals;
-        private ActiveRagdoll _ragdoll;
         private SpectatorController _spectator;
 
         private void Awake()
         {
             _vitals = GetComponent<PlayerVitals>();
-            _ragdoll = GetComponent<ActiveRagdoll>();
             _spectator = GetComponent<SpectatorController>();
         }
 
@@ -28,12 +24,9 @@ namespace Game.Player
 
         private void HandleDied()
         {
-            // Le corps est DÉJÀ physique : couper les moteurs suffit à le faire s'effondrer.
-            if (_ragdoll != null) _ragdoll.SetMotorsEnabled(false);
-            Disable<RagdollLocomotion>();
-            Disable<RagdollBalance>();
-            Disable<RagdollPoseDriver>();
-            Disable<HandReach>();
+            // On fige le perso (plus de déplacement ni de regard).
+            Disable<FirstPersonController>();
+            Disable<PlayerCamera>();
             Disable<PlayerInputReader>();
 
             // Seul le joueur local passe en spectateur (suit les autres joueurs vivants).

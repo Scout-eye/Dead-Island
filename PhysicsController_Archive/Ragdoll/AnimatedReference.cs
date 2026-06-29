@@ -45,6 +45,8 @@ namespace Game.Player.Ragdoll
         /// <summary>Vrai si le squelette de référence est utilisable (au moins le bassin résolu).</summary>
         public bool Ready => _bones.Count > 0;
 
+        /// <summary>Animator de l'AnimRig (lecture seule, pour le debug overlay).</summary>
+        public Animator Animator => _animator;
         /// <summary>Transform racine de l'AnimRig (qu'on co-localise sur le corps physique).</summary>
         public Transform Root => _animRoot;
         /// <summary>Os "Hips" animé (sa position/rotation MONDE = cible du bassin physique).</summary>
@@ -76,6 +78,10 @@ namespace Game.Player.Ragdoll
         /// <summary>Rotation locale de l'os animé (cible à recopier dans le joint physique).</summary>
         public Quaternion LocalRotation(RagdollPart part)
             => _bones.TryGetValue(part, out var t) ? t.localRotation : Quaternion.identity;
+
+        /// <summary>Rotation MONDE de l'os animé (pour ajouter un delta de regard convention-indépendant).</summary>
+        public Quaternion WorldRotation(RagdollPart part)
+            => _bones.TryGetValue(part, out var t) ? t.rotation : Quaternion.identity;
 
         public bool Has(RagdollPart part) => _bones.ContainsKey(part);
 

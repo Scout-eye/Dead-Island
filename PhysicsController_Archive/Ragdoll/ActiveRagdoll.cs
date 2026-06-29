@@ -37,11 +37,19 @@ namespace Game.Player.Ragdoll
         [Header("Drive angulaire des joints (raideur de la 'musculature')")]
         [Tooltip("Raideur du ressort qui tire chaque os vers sa pose cible. Doit tenir le poids du corps " +
                  "sur les jambes : plus haut = plus ferme (s'enfonce moins), trop haut = rigide.")]
-        [SerializeField] private float _driveSpring = 1000f;
+        [SerializeField] private float _driveSpring = 2200f;
         [Tooltip("Amortissement du drive (évite l'oscillation). ~10% du spring est un bon départ.")]
-        [SerializeField] private float _driveDamper = 100f;
+        [SerializeField] private float _driveDamper = 160f;
         [Tooltip("Force max appliquée par le drive (borne, évite l'explosion numérique).")]
-        [SerializeField] private float _driveMaxForce = 9000f;
+        [SerializeField] private float _driveMaxForce = 25000f;
+        [Range(0.05f, 1f)]
+        [Tooltip("Fraction de la raideur pour les BRAS. Bas = bras LÂCHES qui ballottent (feel physique " +
+                 "façon PEAK). Les jambes restent fermes pour tenir debout.")]
+        [SerializeField] private float _armDriveFactor = 0.2f;
+        [Range(0f, 1.5f)]
+        [Tooltip("Friction des colliders. Haut = accroche (anti-glisse au relevé) ; si ça reste COINCÉ " +
+                 "en arrière, baisse (les pieds peuvent se replacer). Effet au prochain Play.")]
+        [SerializeField] private float _gripFriction = 0.8f;
 
         private struct Part
         {
@@ -114,7 +122,27 @@ namespace Game.Player.Ragdoll
                 drive.positionDamper = damper;
                 j.slerpDrive = drive;
             }
+            if (enabled) SoftenArms(); // garde les bras lâches après un relevé
         }
+
+        /// <summary>Réduit la raideur des joints de BRAS (bras qui ballottent = feel physique PEAK).</summary>
+        private void SoftenArms()
+        {
+            foreach (var part in ArmParts)
+            {
+                if (!_parts.TryGetValue(part, out var p) || p.Joint == null) continue;
+                var d = p.Joint.slerpDrive;
+                d.positionSpring = _driveSpring * _armDriveFactor;
+                d.positionDamper = _driveDamper * _armDriveFactor;
+                p.Joint.slerpDrive = d;
+            }
+        }
+
+        private static readonly RagdollPart[] ArmParts =
+        {
+            RagdollPart.LeftUpperArm, RagdollPart.LeftForeArm, RagdollPart.LeftHand,
+            RagdollPart.RightUpperArm, RagdollPart.RightForeArm, RagdollPart.RightHand,
+        };
 
         // --- Construction ---------------------------------------------------
 
@@ -176,6 +204,7 @@ namespace Game.Player.Ragdoll
 
             // Les os d'une même chaîne ne se collisionnent pas entre eux (sinon jitter permanent).
             IgnoreSelfCollisions();
+            SoftenArms(); // bras lâches -> feel physique
 
             _built = true;
         }
@@ -260,7 +289,7 @@ namespace Game.Player.Ragdoll
             rb.maxAngularVelocity = 20f;
             // Anti-convulsion : empêche l'éjection explosive quand des colliders se chevauchent
             // (spawn / pénétration sol) et stabilise les joints avec plus d'itérations de solveur.
-            rb.maxDepenetrationVelocity = 1f;
+            rb.maxDepenetrationVelocity = 3f;   // ressort du sol assez vite (pieds qui s'enfoncent)
             rb.solverIterations = 16;
             rb.solverVelocityIterations = 8;
             _bodies.Add(rb);
@@ -336,12 +365,24 @@ namespace Game.Player.Ragdoll
             b.center = center;
         }
 
-        /// <summary>Empêche les colliders d'os reliés de se repousser (sinon jitter permanent).</summary>
+        /// <summary>
+        /// Finalise les colliders : matériau à FORTE friction (les pieds accrochent au lieu de patiner,
+        /// surtout au relevé) + désactive les collisions entre os reliés (sinon jitter permanent).
+        /// </summary>
         private void IgnoreSelfCollisions()
         {
+            var grip = new PhysicsMaterial("RagdollGrip")
+            {
+                dynamicFriction = _gripFriction,
+                staticFriction = _gripFriction,
+                bounciness = 0f,
+                frictionCombine = PhysicsMaterialCombine.Maximum,
+                bounceCombine = PhysicsMaterialCombine.Minimum
+            };
+
             var cols = new List<Collider>();
             foreach (var rb in _bodies)
-                if (rb != null && rb.TryGetComponent<Collider>(out var c)) cols.Add(c);
+                if (rb != null && rb.TryGetComponent<Collider>(out var c)) { c.sharedMaterial = grip; cols.Add(c); }
 
             for (int i = 0; i < cols.Count; i++)
                 for (int k = i + 1; k < cols.Count; k++)

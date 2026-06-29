@@ -1,21 +1,18 @@
 using System.Collections.Generic;
 using UnityEngine;
-using Game.Player.Ragdoll;
 
 namespace Game.Player
 {
     /// <summary>
-    /// Représentation d'un joueur distant : reçoit des PlayerState (via NetworkManager),
-    /// les met dans un buffer et INTERPOLE position / rotation / cibles d'IK avec un léger
-    /// retard (interpolation buffer), puis réinjecte le résultat dans les composants joueur.
+    /// Représentation d'un joueur distant : reçoit des PlayerState (via NetworkManager), les met dans
+    /// un buffer et INTERPOLE position / rotation / vitesse avec un léger retard, puis réinjecte le
+    /// résultat dans le controller (transform imposé) et la caméra/animation.
     ///
-    /// Aucune physique ni input : le ragdoll est kinematic (SetOwner(false)) et son transform racine
-    /// est déplacé par interpolation. La vraie synchro des os de l'active ragdoll est une itération
-    /// future (pour l'instant le squelette suit rigidement le root dans sa dernière pose).
-    ///
+    /// Aucun input ni physique locale : le CharacterController est désactivé (SetOwner(false)) et le
+    /// transform est déplacé par interpolation ; l'avatar s'anime depuis la vitesse réseau.
     /// Composant présent sur le prefab joueur, activé uniquement pour les remotes.
     /// </summary>
-    [DefaultExecutionOrder(-50)] // avant animator (-10) et hands (0)
+    [DefaultExecutionOrder(-50)]
     [DisallowMultipleComponent]
     public sealed class RemotePlayer : MonoBehaviour
     {
@@ -23,18 +20,16 @@ namespace Game.Player
         [SerializeField] private float _interpolationDelay = 0.12f;
         [SerializeField] private int _maxBuffer = 16;
 
-        private RagdollLocomotion _body;
+        private FirstPersonController _body;
         private PlayerCamera _camera;
-        private HandReach _hands;
         private PlayerVitals _vitals;
 
         private readonly List<Snapshot> _buffer = new List<Snapshot>();
 
         private void Awake()
         {
-            _body = GetComponent<RagdollLocomotion>();
+            _body = GetComponent<FirstPersonController>();
             _camera = GetComponent<PlayerCamera>();
-            _hands = GetComponent<HandReach>();
             _vitals = GetComponent<PlayerVitals>();
         }
 
@@ -91,9 +86,7 @@ namespace Game.Player
             if (_body != null)
                 _body.ApplyNetworkTransform(s.Position, s.Yaw, s.Velocity);
             if (_camera != null)
-                _camera.SetNetworkLook(s.Yaw, s.Pitch); // pas de head-yaw indépendant synchronisé pour l'instant
-            if (_hands != null)
-                _hands.SetNetworkHands(s.LeftHandTarget, s.RightHandTarget);
+                _camera.SetNetworkLook(s.Yaw, s.Pitch);
             if (_vitals != null)
                 _vitals.SetDeadFromNetwork(s.Dead);
         }
@@ -107,8 +100,6 @@ namespace Game.Player
                 Yaw = Mathf.LerpAngle(a.Yaw, b.Yaw, t),
                 Pitch = Mathf.LerpAngle(a.Pitch, b.Pitch, t),
                 Velocity = Vector3.Lerp(a.Velocity, b.Velocity, t),
-                LeftHandTarget = Vector3.Lerp(a.LeftHandTarget, b.LeftHandTarget, t),
-                RightHandTarget = Vector3.Lerp(a.RightHandTarget, b.RightHandTarget, t),
                 Dead = b.Dead
             };
         }

@@ -25,6 +25,8 @@ namespace Game.Player.Ragdoll
         [SerializeField] private float _runParam = 4f;
         [Tooltip("Vitesse de rotation du corps vers la direction de déplacement (deg/s).")]
         [SerializeField] private float _turnSpeed = 540f;
+        [Tooltip("À l'arrêt, le corps ne pivote que si le regard dépasse cet angle (la tête tourne avant). Doit matcher le Max Head Yaw du PoseDriver.")]
+        [SerializeField] private float _maxHeadYaw = 70f;
 
         [Header("Laisse du leader")]
         [Tooltip("Distance horizontale max dont l'AnimRig peut devancer le corps physique (m).")]
@@ -117,13 +119,28 @@ namespace Game.Player.Ragdoll
             }
         }
 
-        /// <summary>Oriente le corps vers la direction de déplacement (relative au regard).</summary>
+        /// <summary>
+        /// En marche : le corps s'oriente vers la direction de déplacement. À l'arrêt : il ne pivote
+        /// QUE si le regard dépasse l'angle de tête (la tête tourne d'abord, le corps suit ensuite).
+        /// </summary>
         private void UpdateFacing(Vector2 move, bool moving)
         {
-            if (!moving) return;
-            Vector3 wish = Quaternion.Euler(0f, LookYaw, 0f) * new Vector3(move.x, 0f, move.y);
-            float target = Mathf.Atan2(wish.x, wish.z) * Mathf.Rad2Deg;
-            _faceYaw = Mathf.MoveTowardsAngle(_faceYaw, target, _turnSpeed * Time.fixedDeltaTime);
+            float step = _turnSpeed * Time.fixedDeltaTime;
+            if (moving)
+            {
+                Vector3 wish = Quaternion.Euler(0f, LookYaw, 0f) * new Vector3(move.x, 0f, move.y);
+                float target = Mathf.Atan2(wish.x, wish.z) * Mathf.Rad2Deg;
+                _faceYaw = Mathf.MoveTowardsAngle(_faceYaw, target, step);
+            }
+            else
+            {
+                float delta = Mathf.DeltaAngle(_faceYaw, LookYaw);
+                if (Mathf.Abs(delta) > _maxHeadYaw)
+                {
+                    float target = LookYaw - Mathf.Sign(delta) * _maxHeadYaw;
+                    _faceYaw = Mathf.MoveTowardsAngle(_faceYaw, target, step);
+                }
+            }
         }
 
         /// <summary>Choisit idle / marche / course (le root motion fournira la vitesse réelle).</summary>

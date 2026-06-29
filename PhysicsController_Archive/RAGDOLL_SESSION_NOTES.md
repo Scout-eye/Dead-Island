@@ -1,37 +1,4 @@
-# Notes de session — Controller joueur
-
-## ⚠️ ÉTAT ACTUEL (décision du 26/06)
-Le controller **physique (active ragdoll)** a été **mis de côté** : trop dépendant d'un réglage live impossible ici, et pas adapté en priorité au jeu visé (exploration d'île + tension sociale). Il est **archivé intact** dans `PhysicsController_Archive/` (11 scripts + README + ces notes) — réactivable plus tard.
-
-**Le jeu actif utilise maintenant un controller PREMIÈRE PERSONNE classique** (façon Content Warning / Lethal Company), simple et fluide :
-- `FirstPersonController.cs` — CharacterController : WASD, course, saut, gravité.
-- `PlayerCamera.cs` — souris X tourne le corps, souris Y incline la vue, head bob.
-- `PlayerAnimator.cs` — pilote l'avatar (blend idle/marche/course en place) depuis la vitesse.
-- Périphériques adaptés : `PlayerVitals`, `PlayerDeath` (fige + spectateur), `RemotePlayer` + `PlayerState` (sans mains IK), `NetworkManager` (cache l'avatar local).
-- Builder : `Tools ▸ Dead Island ▸ Build Player Prefab` reconstruit le prefab FPS (génère l'Animator si besoin). Anims Mixamo réutilisées **en place** (root motion coupé).
-
-**À faire sur le PC fixe** : recompiler, lancer **Build Player Animator** PUIS **Build Player Prefab**, remplacer le Player de la scène, Play. Architecture modulaire : chaque feature isolée, faible adhérence.
-
-### Animations (mise à jour)
-- **L'avatar local est VISIBLE** (on voit son corps qui s'anime) ; `FirstPersonView` cache juste la **tête** en local (la caméra ne voit pas l'intérieur du crâne). Les distants voient l'avatar entier.
-- **Vitesses réalistes + cohérentes** avec les clips : marche **1.9 m/s**, course **4.3 m/s**, accroupi **1.1** — alignées sur les seuils du blend tree (donc pas de glisse). Réglables dans `FirstPersonController`.
-- **Contrôles** : WASD, Shift (courir), Espace (sauter), **Ctrl/C (accroupi)**, **E (interagir)**. La caméra s'abaisse à l'accroupi.
-- **Animator** (généré par Build Player Animator) : Locomotion (idle/walk/run), Jump (si `!Grounded`), **Crouch** (blend, bool Crouch), **Swim** (bool Swim), **Interact** (trigger). États créés seulement si les clips existent.
-
-### Clips Mixamo à récupérer pour compléter (Y Bot, sans skin, dans `Assets/Animations/Player/`)
-Présents : `Idle, Walk, Run, Jump`. **À ajouter** (nommer le fichier avec le mot-clé) :
-- `CrouchIdle` (« Crouch Idle ») + `CrouchWalk` (« Crouching Walking »)
-- `Swim` (« Swimming »)
-- `Interact` (« Picking Up » / « Pressing Button »)
-Puis relancer **Build Player Animator** : il câblera automatiquement les états (sinon ils sont juste sautés).
-
-### À faire plus tard (gameplay, séparé)
-- **Nage** : détecter l'eau (il y a `WaterPlane`/niveau d'eau) → poser le bool `Swim` + mode de nage dans `FirstPersonController`. Le param Animator est déjà prêt.
-- **Interaction** : un `Interactor` (raycast caméra → objets `IInteractable`). Le geste anim (trigger `Interact`) est déjà branché sur la touche E.
-
----
-
-*Ci-dessous : les notes du controller PHYSIQUE archivé (référence / réactivation future).*
+# Controller PEAK-like (active ragdoll) — notes de passation
 
 > Fichier écrit pour reprendre le travail sur le PC principal (où l'on peut **tester et régler en live** dans Unity). Sur le PC actuel on ne pouvait pas itérer la physique, donc le code a été posé "à l'aveugle" : **il a besoin d'une passe de réglage en éditeur**, pas forcément d'être réécrit.
 
