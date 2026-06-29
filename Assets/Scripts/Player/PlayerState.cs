@@ -14,18 +14,22 @@ namespace Game.Player
     {
         public uint Tick;        // numéro de simulation (ordre + buffer d'interpolation)
         public Vector3 Position; // position monde
-        public float Yaw;        // rotation horizontale du corps (degrés)
-        public float Pitch;      // inclinaison du regard (degrés) — anime la tête distante
+        public float Yaw;        // rotation horizontale du CORPS (degrés)
+        public float LookYaw;    // rotation horizontale du REGARD/tête (peut différer du corps)
+        public float Pitch;      // inclinaison du regard (degrés)
         public Vector3 Velocity; // vélocité (extrapolation + animation distante)
         public bool Dead;        // état de mort (spectate + détection "tous morts")
+        public bool Grounded;    // au sol (anime correctement le saut/chute distant)
 
         /// <summary>Taille fixe en octets d'un state sérialisé.</summary>
         public const int Size = sizeof(uint)        // Tick
                               + sizeof(float) * 3    // Position
                               + sizeof(float)        // Yaw
+                              + sizeof(float)        // LookYaw
                               + sizeof(float)        // Pitch
                               + sizeof(float) * 3    // Velocity
-                              + sizeof(byte);        // Dead
+                              + sizeof(byte)         // Dead
+                              + sizeof(byte);        // Grounded
 
         public byte[] Serialize()
         {
@@ -41,9 +45,11 @@ namespace Game.Player
             o = Write(buffer, o, Tick);
             o = Write(buffer, o, Position.x); o = Write(buffer, o, Position.y); o = Write(buffer, o, Position.z);
             o = Write(buffer, o, Yaw);
+            o = Write(buffer, o, LookYaw);
             o = Write(buffer, o, Pitch);
             o = Write(buffer, o, Velocity.x); o = Write(buffer, o, Velocity.y); o = Write(buffer, o, Velocity.z);
             buffer[o++] = (byte)(Dead ? 1 : 0);
+            buffer[o++] = (byte)(Grounded ? 1 : 0);
             return o;
         }
 
@@ -54,9 +60,11 @@ namespace Game.Player
             s.Tick = BitConverter.ToUInt32(buffer, o); o += sizeof(uint);
             s.Position = ReadVector3(buffer, ref o);
             s.Yaw = BitConverter.ToSingle(buffer, o); o += sizeof(float);
+            s.LookYaw = BitConverter.ToSingle(buffer, o); o += sizeof(float);
             s.Pitch = BitConverter.ToSingle(buffer, o); o += sizeof(float);
             s.Velocity = ReadVector3(buffer, ref o);
             s.Dead = buffer[o++] != 0;
+            s.Grounded = buffer[o++] != 0;
             return s;
         }
 

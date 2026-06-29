@@ -1,4 +1,7 @@
+using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
+using Game.Player;
 using Steamworks.Data;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -30,11 +33,15 @@ namespace Game.Net
         private Text _seedText;
         private Button _startButton;
         private GameObject _pausePanel;
+        private GameObject _controlsPanel;
+        private Action _controlsBack;
+        private readonly List<(GameControls.Entry entry, Text keyLabel)> _rebindRows = new List<(GameControls.Entry, Text)>();
         private Text _notifLabel;
         private float _notifTimer;
         private Canvas _canvas;
         private bool _inGame;
         private bool _paused;
+        private bool _rebinding;
 
         private void Start()
         {
@@ -42,6 +49,7 @@ namespace Game.Net
             SteamManager.EnsureExists();
             LobbyManager.EnsureExists();
             NetworkManager.EnsureExists();
+            GameControls.EnsureExists(); // charge les touches custom (PlayerPrefs) dès le menu
 
             EnsureEventSystem();
             BuildUI();
@@ -76,6 +84,7 @@ namespace Game.Net
             BuildBrowsePanel();
             BuildRoomPanel();
             BuildPausePanel();
+            BuildControlsPanel();
             BuildNotification();
         }
 
@@ -128,8 +137,81 @@ namespace Game.Net
             _pausePanel = MakePanel(_canvas.transform, "PausePanel");
             MakeText(_pausePanel.transform, "Pause", 28);
             MakeButton(_pausePanel.transform, "Reprendre", () => SetPaused(false));
+            MakeButton(_pausePanel.transform, "Contrôles", () => ShowControls(() => _pausePanel.SetActive(true)));
             MakeButton(_pausePanel.transform, "Menu principal", ReturnToMenu);
             _pausePanel.SetActive(false);
+        }
+
+        private void BuildControlsPanel()
+        {
+            _controlsPanel = MakePanel(_canvas.transform, "ControlsPanel");
+            MakeText(_controlsPanel.transform, "Contrôles", 26);
+            MakeText(_controlsPanel.transform, "Clique « Changer » puis appuie sur la touche voulue (Échap pour annuler).", 12);
+
+            var gc = GameControls.EnsureExists();
+            _rebindRows.Clear();
+            foreach (var e in gc.Rebindable) MakeRebindRow(_controlsPanel.transform, e);
+
+            MakeButton(_controlsPanel.transform, "Réinitialiser", () => { gc.ResetToDefaults(); RefreshControlLabels(); });
+            MakeButton(_controlsPanel.transform, "Retour", () => { _controlsPanel.SetActive(false); _controlsBack?.Invoke(); });
+            _controlsPanel.SetActive(false);
+        }
+
+        private void MakeRebindRow(Transform parent, GameControls.Entry e)
+        {
+            var row = new GameObject("Row", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            row.transform.SetParent(parent, false);
+            var h = row.GetComponent<HorizontalLayoutGroup>();
+            h.spacing = 6;
+            h.childControlWidth = true; h.childForceExpandWidth = true;
+            h.childControlHeight = false; h.childForceExpandHeight = false;
+            h.childAlignment = TextAnchor.MiddleLeft;
+            row.AddComponent<LayoutElement>().minHeight = 30;
+
+            MakeText(row.transform, e.Label, 16, TextAnchor.MiddleLeft);
+            var keyLabel = MakeText(row.transform, GameControls.DisplayKey(e), 16, TextAnchor.MiddleCenter);
+            MakeButton(row.transform, "Changer", () => StartRebind(e, keyLabel));
+            _rebindRows.Add((e, keyLabel));
+        }
+
+        private void StartRebind(GameControls.Entry e, Text keyLabel)
+        {
+            _rebinding = true;
+            keyLabel.text = "…";
+            e.Action.Disable(); // requis pendant la réassignation
+            e.Action.PerformInteractiveRebinding(e.BindingIndex)
+                .WithControlsExcluding("<Mouse>/delta")
+                .WithCancelingThrough("<Keyboard>/escape")
+                .OnComplete(op =>
+                {
+                    op.Dispose();
+                    e.Action.Enable();
+                    GameControls.Instance.SaveOverrides();
+                    keyLabel.text = GameControls.DisplayKey(e);
+                    _rebinding = false;
+                })
+                .OnCancel(op =>
+                {
+                    op.Dispose();
+                    e.Action.Enable();
+                    keyLabel.text = GameControls.DisplayKey(e);
+                    _rebinding = false;
+                })
+                .Start();
+        }
+
+        private void RefreshControlLabels()
+        {
+            foreach (var (e, lbl) in _rebindRows) if (lbl != null) lbl.text = GameControls.DisplayKey(e);
+        }
+
+        private void ShowControls(Action back)
+        {
+            _controlsBack = back;
+            _mainPanel.SetActive(false);
+            if (_pausePanel != null) _pausePanel.SetActive(false);
+            _controlsPanel.SetActive(true);
+            RefreshControlLabels();
         }
 
         private float _roomRefreshTimer;
@@ -153,7 +235,7 @@ namespace Game.Net
                 }
             }
 
-            if (!_inGame) return;
+            if (!_inGame || _rebinding) return;
             var kb = Keyboard.current;
             if (kb != null && kb.escapeKey.wasPressedThisFrame)
                 SetPaused(!_paused);
@@ -189,6 +271,7 @@ namespace Game.Net
                 LobbyManager.Instance.CreateLobby(_nameField != null ? _nameField.text : ""));
 
             MakeButton(_mainPanel.transform, "Chercher une partie", ShowBrowse);
+            MakeButton(_mainPanel.transform, "Contrôles", () => ShowControls(() => _mainPanel.SetActive(true)));
         }
 
         private void BuildBrowsePanel()
@@ -225,6 +308,7 @@ namespace Game.Net
             _browsePanel.SetActive(false);
             _roomPanel.SetActive(false);
             if (_pausePanel != null) _pausePanel.SetActive(false);
+            if (_controlsPanel != null) _controlsPanel.SetActive(false);
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
         }
@@ -254,6 +338,7 @@ namespace Game.Net
             _browsePanel.SetActive(false);
             _roomPanel.SetActive(false);
             if (_pausePanel != null) _pausePanel.SetActive(false);
+            if (_controlsPanel != null) _controlsPanel.SetActive(false);
         }
 
         // --- Données ---

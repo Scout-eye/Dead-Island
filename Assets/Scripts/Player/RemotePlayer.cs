@@ -23,6 +23,7 @@ namespace Game.Player
         private FirstPersonController _body;
         private PlayerCamera _camera;
         private PlayerVitals _vitals;
+        private PlayerHeadAim _headAim;
 
         private readonly List<Snapshot> _buffer = new List<Snapshot>();
 
@@ -31,6 +32,7 @@ namespace Game.Player
             _body = GetComponent<FirstPersonController>();
             _camera = GetComponent<PlayerCamera>();
             _vitals = GetComponent<PlayerVitals>();
+            _headAim = GetComponentInChildren<PlayerHeadAim>();
         }
 
         /// <summary>Appelé par NetworkManager à chaque state reçu pour ce joueur.</summary>
@@ -84,9 +86,11 @@ namespace Game.Player
         private void Apply(PlayerState s)
         {
             if (_body != null)
-                _body.ApplyNetworkTransform(s.Position, s.Yaw, s.Velocity);
+                _body.ApplyNetworkTransform(s.Position, s.Yaw, s.Velocity, s.Grounded);
             if (_camera != null)
-                _camera.SetNetworkLook(s.Yaw, s.Pitch);
+                _camera.SetNetworkLook(s.LookYaw, s.Pitch);
+            if (_headAim != null)
+                _headAim.SetLook(s.LookYaw, s.Pitch); // la tête tourne vers le regard du joueur distant
             if (_vitals != null)
                 _vitals.SetDeadFromNetwork(s.Dead);
         }
@@ -98,9 +102,11 @@ namespace Game.Player
                 Tick = b.Tick,
                 Position = Vector3.Lerp(a.Position, b.Position, t),
                 Yaw = Mathf.LerpAngle(a.Yaw, b.Yaw, t),
+                LookYaw = Mathf.LerpAngle(a.LookYaw, b.LookYaw, t),
                 Pitch = Mathf.LerpAngle(a.Pitch, b.Pitch, t),
                 Velocity = Vector3.Lerp(a.Velocity, b.Velocity, t),
-                Dead = b.Dead
+                Dead = b.Dead,
+                Grounded = b.Grounded
             };
         }
 

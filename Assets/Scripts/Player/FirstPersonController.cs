@@ -9,8 +9,7 @@ namespace Game.Player
     ///
     /// Responsabilité unique : déplacer le corps. La rotation (regard) est gérée par
     /// <see cref="PlayerCamera"/> ; l'animation de l'avatar par <see cref="PlayerAnimator"/>.
-    /// Communique avec le réseau via un contrat isolé (position/yaw/vélocité), comme avant —
-    /// si on supprime ce script, rien d'autre ne casse hormis le mouvement.
+    /// Communique avec le réseau via un contrat isolé (position/yaw/vélocité).
     /// </summary>
     [RequireComponent(typeof(CharacterController))]
     [DisallowMultipleComponent]
@@ -24,16 +23,10 @@ namespace Game.Player
         [SerializeField] private float _walkSpeed = 1.9f;
         [Tooltip("Vitesse de course : doit matcher le seuil 'run' du blend tree (4.3).")]
         [SerializeField] private float _runSpeed = 4.3f;
-        [SerializeField] private float _crouchSpeed = 1.1f;
         [Tooltip("Lissage de la vitesse horizontale (plus haut = plus réactif).")]
         [SerializeField] private float _acceleration = 14f;
         [Tooltip("Fraction de contrôle en l'air.")]
         [SerializeField] private float _airControl = 0.5f;
-
-        [Header("Accroupi")]
-        [SerializeField] private float _standHeight = 1.8f;
-        [SerializeField] private float _crouchHeight = 1.1f;
-        [SerializeField] private float _crouchLerp = 8f;
 
         [Header("Saut / Gravité")]
         [SerializeField] private float _jumpHeight = 1.1f;
@@ -41,28 +34,38 @@ namespace Game.Player
         [Tooltip("Tolérance de saut juste après avoir quitté le sol (s).")]
         [SerializeField] private float _coyoteTime = 0.12f;
 
+        [Header("Rotation du corps (tête découplée)")]
+        [Tooltip("Angle max que le regard peut tourner avant que le corps suive (à l'arrêt).")]
+        [SerializeField] private float _maxHeadYaw = 70f;
+        [Tooltip("Vitesse d'alignement du corps sur le regard quand on se déplace (deg/s).")]
+        [SerializeField] private float _bodyTurnSpeed = 360f;
+
         private CharacterController _cc;
         private PlayerInputReader _input;
+        private PlayerCamera _camera;
 
         private Vector3 _horizontalVel;
         private float _verticalVel;
         private bool _grounded;
-        private bool _crouching;
         private float _lastGroundedTime;
         private bool _jumpQueued;
+        private bool _jumpedFlag;
+        private float _bodyYaw;
         private Vector3 _netVelocity;
 
         // --- État exposé (caméra, animator, vitals, réseau) ---
         public bool IsOwner => _isOwner;
-        public bool IsGrounded => _grounded;
+        // Anti-rebond : l'isGrounded du CharacterController clignote ; on garde "au sol" un court
+        // délai (lisse l'anim de chute). Les remotes utilisent l'état réseau tel quel.
+        public bool IsGrounded => _isOwner ? (_grounded || (Time.time - _lastGroundedTime) <= 0.12f) : _grounded;
         public bool IsSprinting { get; private set; }
-        public bool IsCrouching => _crouching;
-        /// <summary>0 (debout) → 1 (accroupi), pour abaisser la caméra en douceur.</summary>
-        public float CrouchFactor { get; private set; }
         public float WalkSpeed => _walkSpeed;
         /// <summary>Orientation du corps = orientation du regard (FPS).</summary>
         public float BodyYaw => transform.eulerAngles.y;
         public Vector3 CurrentVelocity => _isOwner ? (_horizontalVel + Vector3.up * _verticalVel) : _netVelocity;
+
+        /// <summary>Vrai une fois par saut (consommé par l'animator pour déclencher le clip à l'instant T).</summary>
+        public bool ConsumeJumped() { if (_jumpedFlag) { _jumpedFlag = false; return true; } return false; }
 
         // --- Contrat réseau (isolé, compatible NetworkManager / RemotePlayer) ---
         public Vector3 NetworkPosition => transform.position;
@@ -71,14 +74,15 @@ namespace Game.Player
         public void SetOwner(bool owner)
         {
             _isOwner = owner;
-            if (_cc != null) _cc.enabled = owner;      // remote : déplacé par le réseau (kinematic-like)
+            if (_cc != null) _cc.enabled = owner;      // remote : déplacé par le réseau
             if (_input != null) _input.enabled = owner;
         }
 
-        /// <summary>Remote : impose le transform interpolé (position + yaw).</summary>
-        public void ApplyNetworkTransform(Vector3 position, float bodyYaw, Vector3 velocity)
+        /// <summary>Remote : impose le transform interpolé (position + yaw) + l'état sol (pour l'anim).</summary>
+        public void ApplyNetworkTransform(Vector3 position, float bodyYaw, Vector3 velocity, bool grounded)
         {
             _netVelocity = velocity;
+            _grounded = grounded;
             transform.SetPositionAndRotation(position, Quaternion.Euler(0f, bodyYaw, 0f));
         }
 
@@ -86,6 +90,10 @@ namespace Game.Player
         {
             _cc = GetComponent<CharacterController>();
             _input = GetComponent<PlayerInputReader>();
+            _camera = GetComponent<PlayerCamera>();
+            _grounded = true;                 // évite l'anim de chute au spawn
+            _lastGroundedTime = Time.time;
+            _bodyYaw = transform.eulerAngles.y;
             SetOwner(_isOwner);
         }
 
@@ -98,42 +106,31 @@ namespace Game.Player
             _grounded = _cc.isGrounded;
             if (_grounded) _lastGroundedTime = Time.time;
 
-            UpdateCrouch(dt);
             Move(dt);
-        }
-
-        /// <summary>Accroupi : abaisse la capsule et la caméra. On ne se relève pas sous un obstacle.</summary>
-        private void UpdateCrouch(float dt)
-        {
-            bool wantCrouch = _input != null && _input.CrouchHeld;
-            if (_crouching && !wantCrouch && BlockedAbove()) wantCrouch = true; // forcé accroupi sous un plafond
-            _crouching = wantCrouch;
-
-            float targetH = _crouching ? _crouchHeight : _standHeight;
-            float h = Mathf.MoveTowards(_cc.height, targetH, _crouchLerp * dt);
-            _cc.height = h;
-            _cc.center = new Vector3(0f, h * 0.5f, 0f);
-            CrouchFactor = Mathf.InverseLerp(_standHeight, _crouchHeight, h);
-        }
-
-        private bool BlockedAbove()
-        {
-            // Rayon vers le haut depuis le sommet de la capsule accroupie : y a-t-il la place de se lever ?
-            Vector3 top = transform.position + Vector3.up * _cc.height;
-            float need = _standHeight - _cc.height + 0.1f;
-            return Physics.Raycast(top, Vector3.up, need, ~0, QueryTriggerInteraction.Ignore);
         }
 
         private void Move(float dt)
         {
             Vector2 input = _input != null ? _input.Move : Vector2.zero;
-            // Déplacement relatif au REGARD (le corps fait face au regard en FPS).
-            Vector3 wishDir = transform.right * input.x + transform.forward * input.y;
-            wishDir = Vector3.ClampMagnitude(wishDir, 1f);
+            bool moving = input.sqrMagnitude > 0.01f;
 
-            bool wantSprint = _input != null && _input.SprintHeld && !_crouching;
-            IsSprinting = wantSprint && input.y > 0.1f && wishDir.sqrMagnitude > 0.01f;
-            float speed = _crouching ? _crouchSpeed : (IsSprinting ? _runSpeed : _walkSpeed);
+            // Déplacement relatif au REGARD (caméra), pas au corps : on va où on regarde.
+            float lookYaw = _camera != null ? _camera.LookYaw : _bodyYaw;
+            Vector3 wishDir = Quaternion.Euler(0f, lookYaw, 0f) * new Vector3(input.x, 0f, input.y);
+            if (wishDir.sqrMagnitude > 1f) wishDir.Normalize(); // diagonale = même vitesse que tout droit
+
+            // Tête découplée : le corps s'aligne au regard quand on bouge ; à l'arrêt il ne suit
+            // que si le regard dépasse l'angle naturel de la tête.
+            float delta = Mathf.DeltaAngle(_bodyYaw, lookYaw);
+            if (moving)
+                _bodyYaw = Mathf.MoveTowardsAngle(_bodyYaw, lookYaw, _bodyTurnSpeed * dt);
+            else if (Mathf.Abs(delta) > _maxHeadYaw)
+                _bodyYaw = Mathf.MoveTowardsAngle(_bodyYaw, lookYaw, Mathf.Abs(delta) - _maxHeadYaw);
+            transform.rotation = Quaternion.Euler(0f, _bodyYaw, 0f);
+
+            bool wantSprint = _input != null && _input.SprintHeld;
+            IsSprinting = wantSprint && input.y > 0.1f && moving;
+            float speed = IsSprinting ? _runSpeed : _walkSpeed;
 
             // Vitesse horizontale lissée (réactif au sol, plus mou en l'air).
             float accel = _acceleration * (_grounded ? 1f : _airControl);
@@ -144,7 +141,7 @@ namespace Game.Player
             bool canJump = _grounded || (Time.time - _lastGroundedTime) <= _coyoteTime;
             if (_jumpQueued)
             {
-                if (canJump) _verticalVel = Mathf.Sqrt(2f * _jumpHeight * -_gravity);
+                if (canJump) { _verticalVel = Mathf.Sqrt(2f * _jumpHeight * -_gravity); _jumpedFlag = true; }
                 _jumpQueued = false;
             }
             _verticalVel += _gravity * dt;

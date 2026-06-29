@@ -237,9 +237,11 @@ namespace Game.Net
                 Tick = _tick++,
                 Position = _localBody.NetworkPosition,
                 Yaw = _localBody.BodyYaw,
+                LookYaw = _localCam != null ? _localCam.LookYaw : _localBody.BodyYaw,
                 Pitch = _localCam != null ? _localCam.Pitch : 0f,
                 Velocity = _localBody.NetworkVelocity,
-                Dead = _localVitals != null && _localVitals.IsDead
+                Dead = _localVitals != null && _localVitals.IsDead,
+                Grounded = _localBody.IsGrounded
             };
         }
 

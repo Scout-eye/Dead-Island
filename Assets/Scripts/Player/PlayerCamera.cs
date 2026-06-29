@@ -3,14 +3,15 @@ using UnityEngine;
 namespace Game.Player
 {
     /// <summary>
-    /// Caméra première personne classique :
-    ///   - Souris X -> yaw, appliqué au CORPS (le joueur tourne sur lui-même).
-    ///   - Souris Y -> pitch, appliqué uniquement au CameraRig (clampé).
-    ///   - Head bob léger basé sur la vitesse de déplacement (zéro keyframe).
+    /// Caméra première personne :
+    ///   - Souris X -> yaw du REGARD (libre, ne tourne PAS le corps directement).
+    ///   - Souris Y -> pitch.
+    ///   - Le rig caméra prend la rotation MONDE du regard (découplé du corps) + head bob.
     ///
-    /// Responsabilité unique : regarder/tourner. Le déplacement est géré par
-    /// <see cref="FirstPersonController"/>. N'actif que pour le joueur local.
+    /// Le corps suit le regard via <see cref="FirstPersonController"/> (la tête peut tourner d'un
+    /// certain angle avant que le corps pivote). N'actif que pour le joueur local.
     /// </summary>
+    [DefaultExecutionOrder(-20)] // avant FirstPersonController (qui lit LookYaw)
     [DisallowMultipleComponent]
     public sealed class PlayerCamera : MonoBehaviour
     {
@@ -28,12 +29,9 @@ namespace Game.Player
         [SerializeField] private float _bobAmplitude = 0.045f;
         [SerializeField] private float _bobSmoothing = 10f;
 
-        [Header("Accroupi")]
-        [Tooltip("De combien l'œil descend quand on est accroupi (m).")]
-        [SerializeField] private float _crouchEyeDrop = 0.6f;
-
         private PlayerInputReader _input;
         private FirstPersonController _controller;
+        private PlayerHeadAim _headAim;
 
         private float _yaw;
         private float _pitch;
@@ -57,6 +55,7 @@ namespace Game.Player
         {
             _input = GetComponent<PlayerInputReader>();
             _controller = GetComponent<FirstPersonController>();
+            _headAim = GetComponentInChildren<PlayerHeadAim>();
             _yaw = transform.eulerAngles.y;
             if (_cameraRig != null) _rigBaseLocalPos = _cameraRig.localPosition;
         }
@@ -74,20 +73,19 @@ namespace Game.Player
             if (Cursor.lockState != CursorLockMode.Locked) return; // pause : on ne tourne pas
 
             Vector2 look = _input != null ? _input.Look : Vector2.zero;
-            _yaw += look.x * _mouseSensitivity;
+            _yaw += look.x * _mouseSensitivity;   // regard libre (le corps ne tourne pas ici)
             _pitch = Mathf.Clamp(_pitch - look.y * _mouseSensitivity, _minPitch, _maxPitch);
-
-            // Le yaw tourne le CORPS (le controller se déplace relatif à transform.forward).
-            transform.rotation = Quaternion.Euler(0f, _yaw, 0f);
         }
 
         private void LateUpdate()
         {
             if (_cameraRig == null) return;
             UpdateHeadBob();
-            float crouch = _controller != null ? _controller.CrouchFactor : 0f;
-            _cameraRig.localPosition = _rigBaseLocalPos + _bobOffset - Vector3.up * (_crouchEyeDrop * crouch);
-            _cameraRig.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
+            // Position suit le corps (hauteur des yeux + bob) ; rotation = regard MONDE (découplé du corps).
+            _cameraRig.localPosition = _rigBaseLocalPos + _bobOffset;
+            _cameraRig.rotation = Quaternion.Euler(_pitch, _yaw, 0f);
+
+            if (_headAim != null) _headAim.SetLook(_yaw, _pitch); // la tête (avatar) suit le regard
         }
 
         private void UpdateHeadBob()

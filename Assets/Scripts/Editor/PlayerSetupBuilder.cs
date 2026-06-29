@@ -43,6 +43,8 @@ namespace Game.Player.EditorTools
 
         private static GameObject BuildPlayerObject()
         {
+            EnsureModelHumanoid(); // indispensable : retargeting des clips Mixamo (Humanoid) sur l'avatar
+
             var model = AssetDatabase.LoadAssetAtPath<GameObject>(YBotPath);
             if (model == null)
             {
@@ -66,6 +68,9 @@ namespace Game.Player.EditorTools
             modelInstance.transform.SetParent(player.transform, false);
             modelInstance.transform.localPosition = Vector3.zero;
             modelInstance.transform.localRotation = Quaternion.identity;
+            // DÉCOMPACTE le modèle imbriqué : sinon l'assignation du controller/avatar/matériau ne se
+            // sauvegarde pas en override dans Player.prefab (Animator sans controller -> T-pose).
+            PrefabUtility.UnpackPrefabInstance(modelInstance, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
             ApplyCharacterMaterial(modelInstance);
 
             // Animator de l'avatar (blend idle/marche/course, EN PLACE).
@@ -73,7 +78,14 @@ namespace Game.Player.EditorTools
             if (animator == null) animator = modelInstance.AddComponent<Animator>();
             animator.applyRootMotion = false;
             animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            // Garantit l'avatar Humanoid (sinon les clips Humanoid ne retargettent pas -> T-pose).
+            foreach (var o in AssetDatabase.LoadAllAssetRepresentationsAtPath(YBotPath))
+                if (o is Avatar a) { animator.avatar = a; break; }
             AssignLocomotionController(animator);
+
+            // IK sur le même GameObject que l'Animator (callback OnAnimatorIK).
+            if (modelInstance.GetComponent<PlayerFootIK>() == null) modelInstance.AddComponent<PlayerFootIK>();
+            if (modelInstance.GetComponent<PlayerHeadAim>() == null) modelInstance.AddComponent<PlayerHeadAim>();
 
             // --- CameraRig + Camera (hauteur des yeux) ---
             var rig = new GameObject("CameraRig");
@@ -94,6 +106,7 @@ namespace Game.Player.EditorTools
 
             player.AddComponent<PlayerVitals>();
             player.AddComponent<SpectatorController>();
+            player.AddComponent<PlayerRagdoll>();   // ragdoll à la mort (os Mixamo)
             player.AddComponent<PlayerDeath>();
 
             // --- Câblage ---
@@ -106,6 +119,19 @@ namespace Game.Player.EditorTools
             soAnim.ApplyModifiedPropertiesWithoutUndo();
 
             return player;
+        }
+
+        /// <summary>Passe le Y Bot en rig Humanoid (crée son avatar) — requis pour le retargeting Mixamo.</summary>
+        private static void EnsureModelHumanoid()
+        {
+            if (AssetImporter.GetAtPath(YBotPath) is ModelImporter imp &&
+                imp.animationType != ModelImporterAnimationType.Human)
+            {
+                imp.animationType = ModelImporterAnimationType.Human;
+                imp.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
+                imp.SaveAndReimport();
+                Debug.Log("[PlayerBuilder] Y Bot passé en Humanoid (retargeting des clips Mixamo).");
+            }
         }
 
         private static void AssignLocomotionController(Animator animator)
