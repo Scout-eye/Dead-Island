@@ -24,6 +24,9 @@ namespace Game.Player
         private PlayerCamera _camera;
         private PlayerVitals _vitals;
         private PlayerHeadAim _headAim;
+        private PlayerHandItem _handItem;
+        private PlayerHoldIK _holdIK;
+        private byte _shownHeld = 255; // pour ne réagir qu'au changement d'objet tenu
 
         private readonly List<Snapshot> _buffer = new List<Snapshot>();
 
@@ -33,6 +36,8 @@ namespace Game.Player
             _camera = GetComponent<PlayerCamera>();
             _vitals = GetComponent<PlayerVitals>();
             _headAim = GetComponentInChildren<PlayerHeadAim>();
+            _handItem = GetComponent<PlayerHandItem>();
+            _holdIK = GetComponentInChildren<PlayerHoldIK>();
         }
 
         /// <summary>Appelé par NetworkManager à chaque state reçu pour ce joueur.</summary>
@@ -93,6 +98,15 @@ namespace Game.Player
                 _headAim.SetLook(s.LookYaw, s.Pitch); // la tête tourne vers le regard du joueur distant
             if (_vitals != null)
                 _vitals.SetDeadFromNetwork(s.Dead);
+
+            // Objet tenu : on n'agit qu'au changement (évite de respawn le modèle chaque frame).
+            if (s.HeldItem != _shownHeld)
+            {
+                _shownHeld = s.HeldItem;
+                var item = ItemDatabase.FromNetId(s.HeldItem);
+                if (_handItem != null) _handItem.SetNetworkItem(item); // sur la main
+                if (_holdIK != null) _holdIK.SetHolding(item != null);  // coude plié
+            }
         }
 
         private static PlayerState Interpolate(PlayerState a, PlayerState b, float t)
@@ -106,7 +120,8 @@ namespace Game.Player
                 Pitch = Mathf.LerpAngle(a.Pitch, b.Pitch, t),
                 Velocity = Vector3.Lerp(a.Velocity, b.Velocity, t),
                 Dead = b.Dead,
-                Grounded = b.Grounded
+                Grounded = b.Grounded,
+                HeldItem = b.HeldItem
             };
         }
 

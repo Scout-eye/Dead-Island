@@ -24,6 +24,10 @@ namespace Game.Player
         public InputAction Jump { get; private set; }
         public InputAction Sprint { get; private set; }
         public InputAction Interact { get; private set; }
+        public InputAction Scroll { get; private set; }       // molette : changer de slot
+        public InputAction UsePrimary { get; private set; }   // clic gauche : utiliser l'objet (manger…)
+        public InputAction UseSecondary { get; private set; } // clic droit : usage spécial de l'objet
+        public InputAction Drop { get; private set; }         // lâcher l'objet en main
 
         /// <summary>Une touche réassignable : libellé + action + index du binding concerné.</summary>
         public sealed class Entry
@@ -84,6 +88,21 @@ namespace Game.Player
             Interact.AddBinding("<Keyboard>/e");       // index 0
             Interact.AddBinding("<Gamepad>/buttonWest");
 
+            Scroll = _map.AddAction("Scroll", InputActionType.Value);
+            Scroll.AddBinding("<Mouse>/scroll/y");
+
+            UsePrimary = _map.AddAction("UsePrimary", InputActionType.Button);
+            UsePrimary.AddBinding("<Mouse>/leftButton");
+            UsePrimary.AddBinding("<Gamepad>/rightTrigger");
+
+            UseSecondary = _map.AddAction("UseSecondary", InputActionType.Button);
+            UseSecondary.AddBinding("<Mouse>/rightButton");
+            UseSecondary.AddBinding("<Gamepad>/leftTrigger");
+
+            Drop = _map.AddAction("Drop", InputActionType.Button);
+            Drop.AddBinding("<Keyboard>/g");
+            Drop.AddBinding("<Gamepad>/dpad/down");
+
             // Touches réassignables (clavier) exposées au menu.
             _rebindable.Add(new Entry { Label = "Avancer", Action = Move, BindingIndex = 1 });
             _rebindable.Add(new Entry { Label = "Reculer", Action = Move, BindingIndex = 2 });
@@ -92,6 +111,7 @@ namespace Game.Player
             _rebindable.Add(new Entry { Label = "Sauter", Action = Jump, BindingIndex = 0 });
             _rebindable.Add(new Entry { Label = "Courir", Action = Sprint, BindingIndex = 0 });
             _rebindable.Add(new Entry { Label = "Interagir", Action = Interact, BindingIndex = 0 });
+            _rebindable.Add(new Entry { Label = "Lâcher", Action = Drop, BindingIndex = 0 });
         }
 
         /// <summary>Libellé lisible de la touche actuelle (ex. "Z", "Espace").</summary>

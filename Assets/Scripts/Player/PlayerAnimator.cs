@@ -17,9 +17,9 @@ namespace Game.Player
         [SerializeField] private float _smoothing = 12f;
 
         private FirstPersonController _controller;
-        private PlayerInputReader _input;
         private float _speed;
         private float _moveX, _moveZ;
+        private int _upperLayer = -1; // layer haut-du-corps (geste de ramassage)
 
         private static readonly int SpeedHash = Animator.StringToHash("Speed");
         private static readonly int MoveXHash = Animator.StringToHash("MoveX"); // strafe local (m/s)
@@ -31,8 +31,15 @@ namespace Game.Player
         private void Awake()
         {
             _controller = GetComponent<FirstPersonController>();
-            _input = GetComponent<PlayerInputReader>();
         }
+
+        private void Start()
+        {
+            if (_animator != null) _upperLayer = _animator.GetLayerIndex("UpperBody");
+        }
+
+        /// <summary>Joue le geste de ramassage (réutilise l'état "Interact"). Appelé par PlayerInteractor.</summary>
+        public void PlayPickup() { if (_animator != null) _animator.SetTrigger(InteractHash); }
 
         private void Update()
         {
@@ -54,9 +61,14 @@ namespace Game.Player
             // Saut : déclenché à l'instant T (clip part tout de suite, pas en retard).
             if (_controller.ConsumeJumped()) _animator.SetTrigger(JumpHash);
 
-            // Geste d'interaction (le système d'interaction gameplay est séparé).
-            if (_controller.IsOwner && _input != null && _input.InteractPressedThisFrame)
-                _animator.SetTrigger(InteractHash);
+            // Poids du layer haut-du-corps : 1 quand le geste de ramassage joue, 0 sinon (blend doux).
+            if (_upperLayer > 0)
+            {
+                bool gesturing = _animator.GetCurrentAnimatorStateInfo(_upperLayer).IsName("Interact")
+                    || (_animator.IsInTransition(_upperLayer) && _animator.GetNextAnimatorStateInfo(_upperLayer).IsName("Interact"));
+                float w = Mathf.MoveTowards(_animator.GetLayerWeight(_upperLayer), gesturing ? 1f : 0f, Time.deltaTime * 8f);
+                _animator.SetLayerWeight(_upperLayer, w);
+            }
         }
     }
 }

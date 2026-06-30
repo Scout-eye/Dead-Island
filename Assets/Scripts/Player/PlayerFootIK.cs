@@ -23,17 +23,41 @@ namespace Game.Player
         [SerializeField] private float _liftThreshold = 0.18f;
         [Tooltip("Le pied ne descend pas plus bas que ça sous sa position animée (évite de clipper les rebords).")]
         [SerializeField] private float _maxStepDown = 0.12f;
+        [Header("Bassin")]
+        [Tooltip("Fraction de l'écart de hauteur entre les pieds dont le bassin descend (→ genoux plient).")]
+        [SerializeField] private float _pelvisBend = 0.6f;
+        [SerializeField] private float _pelvisSmooth = 10f;
         [SerializeField] private LayerMask _mask = ~0;
 
         private Animator _anim;
+        private float _pelvisDrop;
 
         private void Awake() => _anim = GetComponent<Animator>();
 
         private void OnAnimatorIK(int layer)
         {
             if (_anim == null) return;
+
+            // Bassin : si les deux pieds sont à des hauteurs différentes, on abaisse le bassin
+            // proportionnellement à l'écart → les jambes plient davantage (au lieu de s'étirer).
+            float lY = SurfaceY(AvatarIKGoal.LeftFoot, out bool lHit);
+            float rY = SurfaceY(AvatarIKGoal.RightFoot, out bool rHit);
+            float target = (lHit && rHit) ? Mathf.Abs(lY - rY) * _pelvisBend : 0f;
+            _pelvisDrop = Mathf.Lerp(_pelvisDrop, target, Time.deltaTime * _pelvisSmooth);
+            var bp = _anim.bodyPosition;
+            bp.y -= _pelvisDrop;
+            _anim.bodyPosition = bp;
+
             Solve(AvatarIKGoal.LeftFoot);
             Solve(AvatarIKGoal.RightFoot);
+        }
+
+        private float SurfaceY(AvatarIKGoal goal, out bool hit)
+        {
+            Vector3 origin = _anim.GetIKPosition(goal) + Vector3.up * _rayUp;
+            if (Physics.Raycast(origin, Vector3.down, out var h, _rayUp + _rayDown, _mask, QueryTriggerInteraction.Ignore))
+            { hit = true; return h.point.y; }
+            hit = false; return 0f;
         }
 
         private void Solve(AvatarIKGoal goal)

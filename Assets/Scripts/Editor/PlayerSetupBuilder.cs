@@ -86,9 +86,11 @@ namespace Game.Player.EditorTools
             // IK sur le même GameObject que l'Animator (callback OnAnimatorIK).
             if (modelInstance.GetComponent<PlayerFootIK>() == null) modelInstance.AddComponent<PlayerFootIK>();
             if (modelInstance.GetComponent<PlayerHeadAim>() == null) modelInstance.AddComponent<PlayerHeadAim>();
+            if (modelInstance.GetComponent<PlayerHoldIK>() == null) modelInstance.AddComponent<PlayerHoldIK>();
 
             // --- CameraRig + Camera (hauteur des yeux) ---
             var rig = new GameObject("CameraRig");
+            rig.tag = "MainCamera"; // pour Camera.main (label monde, etc.) ; les remotes ont la cam désactivée
             rig.transform.SetParent(player.transform, false);
             rig.transform.localPosition = new Vector3(0f, 1.65f, 0.1f);
             var cam = rig.AddComponent<Camera>();
@@ -108,6 +110,9 @@ namespace Game.Player.EditorTools
             player.AddComponent<SpectatorController>();
             player.AddComponent<PlayerRagdoll>();   // ragdoll à la mort (os Mixamo)
             player.AddComponent<PlayerDeath>();
+            player.AddComponent<PlayerInventory>();  // 3 slots, molette + clic droit
+            player.AddComponent<PlayerHandItem>();   // modèle de l'objet en main droite
+            player.AddComponent<PlayerInteractor>(); // ramassage d'objets du monde (contour blanc + anim)
 
             // --- Câblage ---
             var soCam = new SerializedObject(camera);

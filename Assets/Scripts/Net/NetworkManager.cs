@@ -45,6 +45,7 @@ namespace Game.Net
         private FirstPersonController _localBody;
         private PlayerCamera _localCam;
         private PlayerVitals _localVitals;
+        private PlayerInventory _localInventory;
 
         private bool _worldBuilt;
         private Vector3 _worldCenter;
@@ -109,7 +110,7 @@ namespace Game.Net
         public void ReturnToRoom()
         {
             if (_localPlayer != null) Destroy(_localPlayer);
-            _localPlayer = null; _localBody = null; _localCam = null; _localVitals = null;
+            _localPlayer = null; _localBody = null; _localCam = null; _localVitals = null; _localInventory = null;
 
             foreach (var kv in _remotes)
                 if (kv.Value != null) Destroy(kv.Value.gameObject);
@@ -149,6 +150,7 @@ namespace Game.Net
             _localBody = null;
             _localCam = null;
             _localVitals = null;
+            _localInventory = null;
 
             foreach (var kv in _remotes)
                 if (kv.Value != null) Destroy(kv.Value.gameObject);
@@ -241,7 +243,8 @@ namespace Game.Net
                 Pitch = _localCam != null ? _localCam.Pitch : 0f,
                 Velocity = _localBody.NetworkVelocity,
                 Dead = _localVitals != null && _localVitals.IsDead,
-                Grounded = _localBody.IsGrounded
+                Grounded = _localBody.IsGrounded,
+                HeldItem = ItemDatabase.GetNetId(_localInventory != null ? _localInventory.SelectedItem : null)
             };
         }
 
@@ -328,6 +331,7 @@ namespace Game.Net
             _localBody = _localPlayer.GetComponent<FirstPersonController>();
             _localCam = _localPlayer.GetComponent<PlayerCamera>();
             _localVitals = _localPlayer.GetComponent<PlayerVitals>();
+            _localInventory = _localPlayer.GetComponent<PlayerInventory>();
         }
 
         private RemotePlayer GetOrCreateRemote(ulong steamId)

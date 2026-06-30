@@ -142,22 +142,13 @@ namespace Game.Player.EditorTools
                 fromSwim.hasExitTime = false; fromSwim.duration = 0.2f;
             }
 
-            // --- Interaction (geste one-shot, trigger) ---
-            if (interact != null)
-            {
-                var interactState = sm.AddState("Interact");
-                interactState.motion = interact;
-                var toInteract = sm.AddAnyStateTransition(interactState);
-                toInteract.AddCondition(AnimatorConditionMode.If, 0, "Interact");
-                toInteract.hasExitTime = false; toInteract.duration = 0.05f; toInteract.canTransitionToSelf = false;
-                var fromInteract = interactState.AddTransition(loco);
-                fromInteract.hasExitTime = true; fromInteract.exitTime = 0.85f; fromInteract.duration = 0.15f;
-            }
-
             // IK Pass (requis pour le Foot IK qui pose les pieds sur le sol/objets).
             var layers = controller.layers;
             layers[0].iKPass = true;
             controller.layers = layers;
+
+            // --- Geste de ramassage : layer HAUT-DU-CORPS masqué -> blende avec la locomotion ---
+            if (interact != null) BuildUpperBodyGesture(controller, interact);
 
             EditorUtility.SetDirty(controller);
             AssetDatabase.SaveAssets();
@@ -171,6 +162,46 @@ namespace Game.Player.EditorTools
         private static void AddDir(BlendTree tree, AnimationClip clip, float x, float z)
         {
             if (clip != null) tree.AddChild(clip, new Vector2(x, z));
+        }
+
+        // Layer additionnel masqué (buste + bras + mains) pour jouer un geste par-dessus la locomotion.
+        // Poids piloté par PlayerAnimator (0 au repos, 1 pendant le geste) -> les jambes gardent la marche.
+        private static void BuildUpperBodyGesture(AnimatorController controller, AnimationClip interact)
+        {
+            const string maskPath = Dir + "/UpperBody.mask";
+            if (AssetDatabase.LoadAssetAtPath<AvatarMask>(maskPath) != null) AssetDatabase.DeleteAsset(maskPath);
+
+            var mask = new AvatarMask();
+            mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.Root, false);
+            mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.Body, true);
+            mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.Head, true);
+            mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.LeftLeg, false);
+            mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.RightLeg, false);
+            mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.LeftArm, true);
+            mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.RightArm, true);
+            mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.LeftFingers, true);
+            mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.RightFingers, true);
+            AssetDatabase.CreateAsset(mask, maskPath);
+
+            controller.AddLayer("UpperBody");
+            var layers = controller.layers;
+            int idx = layers.Length - 1;
+            layers[idx].avatarMask = mask;
+            layers[idx].defaultWeight = 0f; // PlayerAnimator monte le poids pendant le geste
+            layers[idx].blendingMode = AnimatorLayerBlendingMode.Override;
+            controller.layers = layers;
+
+            var sm = controller.layers[idx].stateMachine;
+            var empty = sm.AddState("Empty");
+            sm.defaultState = empty;
+            var gesture = sm.AddState("Interact");
+            gesture.motion = interact;
+
+            var toGesture = sm.AddAnyStateTransition(gesture);
+            toGesture.AddCondition(AnimatorConditionMode.If, 0, "Interact");
+            toGesture.hasExitTime = false; toGesture.duration = 0.1f; toGesture.canTransitionToSelf = false;
+            var back = gesture.AddTransition(empty);
+            back.hasExitTime = true; back.exitTime = 0.85f; back.duration = 0.2f;
         }
 
         // --- Import : tous les clips EN PLACE ; boucle sauf les one-shots ---
