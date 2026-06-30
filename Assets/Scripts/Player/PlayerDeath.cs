@@ -11,14 +11,14 @@ namespace Game.Player
     public sealed class PlayerDeath : MonoBehaviour
     {
         private PlayerVitals _vitals;
-        private PlayerRagdoll _ragdoll;
         private SpectatorController _spectator;
+        private PlayerRagdoll _ragdoll;
 
         private void Awake()
         {
             _vitals = GetComponent<PlayerVitals>();
-            _ragdoll = GetComponent<PlayerRagdoll>();
             _spectator = GetComponent<SpectatorController>();
+            _ragdoll = GetComponent<PlayerRagdoll>();
         }
 
         private void OnEnable() { if (_vitals != null) _vitals.Died += HandleDied; }
@@ -26,11 +26,18 @@ namespace Game.Player
 
         private void HandleDied()
         {
+            // Ragdoll : il coupe lui-même Animator + controller + caméra + input + CharacterController.
             if (_ragdoll != null) _ragdoll.Activate();
+            else { Disable<FirstPersonController>(); Disable<PlayerCamera>(); Disable<PlayerInputReader>(); }
 
             // Seul le joueur local passe en spectateur (suit les autres joueurs vivants).
             if (_vitals != null && _vitals.IsOwner && _spectator != null)
                 _spectator.Begin();
+        }
+
+        private void Disable<T>() where T : Behaviour
+        {
+            if (TryGetComponent<T>(out var c)) c.enabled = false;
         }
     }
 }

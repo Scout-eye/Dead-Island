@@ -43,7 +43,7 @@ namespace Game.Player
         public float MaxHunger => _maxHunger;
         public float MaxThirst => _maxThirst;
         public bool IsDead => _isDead;
-        // Owner = pas de PlayerBody (prefab de test posé seul) OU PlayerBody marqué owner (local).
+        // Owner = pas de controller (prefab de test posé seul) OU controller marqué owner (local).
         public bool IsOwner => _body == null || _body.IsOwner;
 
         // Événements d'instance (UI, etc.). (valeur courante, valeur max)
@@ -60,11 +60,11 @@ namespace Game.Player
         public static event Action<PlayerVitals> OwnerReady;
         public static event Action OwnerGone;
 
-        private PlayerBody _body;
+        private FirstPersonController _body;
 
         private void Awake()
         {
-            _body = GetComponent<PlayerBody>();
+            _body = GetComponent<FirstPersonController>();
             _health = _maxHealth;
             _hunger = _maxHunger;
             _thirst = _maxThirst;

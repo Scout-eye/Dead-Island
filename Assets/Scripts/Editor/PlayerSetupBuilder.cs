@@ -5,25 +5,19 @@ using UnityEngine;
 namespace Game.Player.EditorTools
 {
     /// <summary>
-    /// Outil éditeur : construit un GameObject "Player" complet à partir du modèle Y Bot (Mixamo),
-    /// câble tous les composants de l'étape 1 et résout automatiquement les bones (préfixe
-    /// "mixamorig:" géré). Évite tout drag&drop manuel.
+    /// Construit le prefab joueur PREMIÈRE PERSONNE à partir du modèle Y Bot (Mixamo) et câble tous
+    /// les composants : CharacterController + caméra FPS + avatar animé (idle/marche/course).
     ///
-    /// Menu : Tools ▸ Dead Island ▸ Build Player From Y Bot.
+    /// Hiérarchie produite :
+    ///   Player (CharacterController + FirstPersonController + PlayerCamera + PlayerAnimator + …)
+    ///   ├─ Model (Y Bot + Animator)         -> avatar visible (caché pour le joueur local)
+    ///   └─ CameraRig (Camera + AudioListener) -> vue à hauteur des yeux
+    ///
+    /// Menu : Tools ▸ Dead Island ▸ Build Player Prefab (Resources).
     /// </summary>
     public static class PlayerSetupBuilder
     {
         private const string YBotPath = "Assets/Models/Characters/Y Bot.fbx";
-
-        [MenuItem("Tools/Dead Island/Build Player From Y Bot")]
-        public static void BuildPlayer()
-        {
-            var player = BuildPlayerObject();
-            if (player == null) return;
-            Selection.activeGameObject = player;
-            EditorGUIUtility.PingObject(player);
-            Debug.Log("[PlayerBuilder] Player construit dans la scène. Règle le LayerMask (GroundMask de PlayerBody).", player);
-        }
 
         [MenuItem("Tools/Dead Island/Build Player Prefab (Resources)")]
         public static void BuildPlayerPrefab()
@@ -40,7 +34,7 @@ namespace Game.Player.EditorTools
 
             if (prefab != null)
             {
-                Debug.Log($"[PlayerBuilder] Prefab sauvegardé : {path} (chargé par NetworkManager).", prefab);
+                Debug.Log($"[PlayerBuilder] Prefab FPS sauvegardé : {path} (chargé par NetworkManager).", prefab);
                 Selection.activeObject = prefab;
                 EditorGUIUtility.PingObject(prefab);
             }
@@ -49,38 +43,128 @@ namespace Game.Player.EditorTools
 
         private static GameObject BuildPlayerObject()
         {
+            EnsureModelHumanoid(); // indispensable : retargeting des clips Mixamo (Humanoid) sur l'avatar
+
             var model = AssetDatabase.LoadAssetAtPath<GameObject>(YBotPath);
             if (model == null)
             {
-                EditorUtility.DisplayDialog("Player Builder",
-                    $"Modèle introuvable à :\n{YBotPath}", "OK");
+                EditorUtility.DisplayDialog("Player Builder", $"Modèle introuvable à :\n{YBotPath}", "OK");
                 return null;
             }
 
-            // --- Root Player ---
+            // --- Root Player + CharacterController ---
             var player = new GameObject("Player");
+            var cc = player.AddComponent<CharacterController>();
+            cc.height = 1.8f;
+            cc.radius = 0.3f;
+            cc.center = new Vector3(0f, 0.9f, 0f);
+            cc.slopeLimit = 50f;
+            cc.stepOffset = 0.35f;
+            cc.skinWidth = 0.02f;
 
-            var rb = player.AddComponent<Rigidbody>();
-            rb.mass = 70f;
-            rb.interpolation = RigidbodyInterpolation.Interpolate;
-            rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-            rb.constraints = RigidbodyConstraints.FreezeRotation;
-
-            var capsule = player.AddComponent<CapsuleCollider>();
-            capsule.height = 1.8f;
-            capsule.radius = 0.3f;
-            capsule.center = new Vector3(0f, 0.9f, 0f);
-
-            // --- Modèle Y Bot en enfant (instance de prefab pour garder le lien au FBX) ---
+            // --- Modèle Y Bot (avatar visible) ---
             var modelInstance = (GameObject)PrefabUtility.InstantiatePrefab(model);
+            modelInstance.name = "Model";
             modelInstance.transform.SetParent(player.transform, false);
             modelInstance.transform.localPosition = Vector3.zero;
             modelInstance.transform.localRotation = Quaternion.identity;
+            // DÉCOMPACTE le modèle imbriqué : sinon l'assignation du controller/avatar/matériau ne se
+            // sauvegarde pas en override dans Player.prefab (Animator sans controller -> T-pose).
+            PrefabUtility.UnpackPrefabInstance(modelInstance, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
+            ApplyCharacterMaterial(modelInstance);
 
-            // Matériau perso avec écume partagée (même système que le rivage).
-            // IMPORTANT : matériau-ASSET (pas new Material runtime), sinon le prefab perd la
-            // référence à l'enregistrement -> personnage magenta.
-            // On récupère texture + couleur d'origine du modèle pour conserver son apparence.
+            // Animator de l'avatar (blend idle/marche/course, EN PLACE).
+            var animator = modelInstance.GetComponent<Animator>();
+            if (animator == null) animator = modelInstance.AddComponent<Animator>();
+            animator.applyRootMotion = false;
+            animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            // Garantit l'avatar Humanoid (sinon les clips Humanoid ne retargettent pas -> T-pose).
+            foreach (var o in AssetDatabase.LoadAllAssetRepresentationsAtPath(YBotPath))
+                if (o is Avatar a) { animator.avatar = a; break; }
+            AssignLocomotionController(animator);
+
+            // IK sur le même GameObject que l'Animator (callback OnAnimatorIK).
+            if (modelInstance.GetComponent<PlayerFootIK>() == null) modelInstance.AddComponent<PlayerFootIK>();
+            if (modelInstance.GetComponent<PlayerHeadAim>() == null) modelInstance.AddComponent<PlayerHeadAim>();
+            if (modelInstance.GetComponent<PlayerHoldIK>() == null) modelInstance.AddComponent<PlayerHoldIK>();
+
+            // --- CameraRig + Camera (hauteur des yeux) ---
+            var rig = new GameObject("CameraRig");
+            rig.tag = "MainCamera"; // pour Camera.main (label monde, etc.) ; les remotes ont la cam désactivée
+            rig.transform.SetParent(player.transform, false);
+            rig.transform.localPosition = new Vector3(0f, 1.65f, 0.1f);
+            var cam = rig.AddComponent<Camera>();
+            cam.nearClipPlane = 0.05f;
+            rig.AddComponent<AudioListener>();
+
+            // --- Composants joueur (FPS) ---
+            player.AddComponent<PlayerInputReader>();
+            player.AddComponent<FirstPersonController>(); // déplacement
+            var camera = player.AddComponent<PlayerCamera>();   // regard
+            var anim = player.AddComponent<PlayerAnimator>();    // anim avatar
+            player.AddComponent<FirstPersonView>();              // cache la tête en local
+            var remote = player.AddComponent<RemotePlayer>();
+            remote.enabled = false; // dormant ; activé par le réseau pour les distants
+
+            player.AddComponent<PlayerVitals>();
+            player.AddComponent<SpectatorController>();
+            player.AddComponent<PlayerRagdoll>();   // ragdoll à la mort (os Mixamo)
+            player.AddComponent<PlayerDeath>();
+            player.AddComponent<PlayerInventory>();  // 3 slots, molette + clic droit
+            player.AddComponent<PlayerHandItem>();   // modèle de l'objet en main droite
+            player.AddComponent<PlayerInteractor>(); // ramassage d'objets du monde (contour blanc + anim)
+
+            // --- Câblage ---
+            var soCam = new SerializedObject(camera);
+            SetRef(soCam, "_cameraRig", rig.transform);
+            soCam.ApplyModifiedPropertiesWithoutUndo();
+
+            var soAnim = new SerializedObject(anim);
+            SetRef(soAnim, "_animator", animator);
+            soAnim.ApplyModifiedPropertiesWithoutUndo();
+
+            return player;
+        }
+
+        /// <summary>Passe le Y Bot en rig Humanoid (crée son avatar) — requis pour le retargeting Mixamo.</summary>
+        private static void EnsureModelHumanoid()
+        {
+            if (AssetImporter.GetAtPath(YBotPath) is ModelImporter imp &&
+                imp.animationType != ModelImporterAnimationType.Human)
+            {
+                imp.animationType = ModelImporterAnimationType.Human;
+                imp.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
+                imp.SaveAndReimport();
+                Debug.Log("[PlayerBuilder] Y Bot passé en Humanoid (retargeting des clips Mixamo).");
+            }
+        }
+
+        private static void AssignLocomotionController(Animator animator)
+        {
+            var controller = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(PlayerAnimatorBuilder.ControllerPath);
+            if (controller == null)
+            {
+                Debug.Log("[PlayerBuilder] Controller absent -> génération automatique de l'Animator…");
+                PlayerAnimatorBuilder.BuildAnimator();
+                AssetDatabase.Refresh();
+                controller = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(PlayerAnimatorBuilder.ControllerPath);
+            }
+
+            if (controller != null)
+            {
+                animator.runtimeAnimatorController = controller;
+                Debug.Log($"[PlayerBuilder] ✓ Controller assigné à l'avatar : {controller.name}", controller);
+            }
+            else
+            {
+                Debug.LogError("[PlayerBuilder] AnimatorController introuvable : l'avatar restera en T-pose. " +
+                               "Vérifie les clips dans Assets/Animations/Player/ (idle/walk/run).");
+            }
+        }
+
+        /// <summary>Applique le matériau perso (écume partagée) en conservant texture/teinte d'origine.</summary>
+        private static void ApplyCharacterMaterial(GameObject modelInstance)
+        {
             Texture srcTex = null;
             Color srcColor = Color.white;
             foreach (var r in modelInstance.GetComponentsInChildren<Renderer>(true))
@@ -95,100 +179,15 @@ namespace Game.Player.EditorTools
             }
 
             var charMat = GetOrCreateCharacterMaterial();
-            if (charMat != null)
-            {
-                if (srcTex != null) charMat.SetTexture("_BaseMap", srcTex);
-                // Teinte : couleur d'origine (ou blanc si une texture porte déjà la couleur).
-                charMat.SetColor("_BaseColor", srcTex != null ? Color.white : srcColor);
-                EditorUtility.SetDirty(charMat);
-                AssetDatabase.SaveAssets();
+            if (charMat == null) return;
 
-                foreach (var r in modelInstance.GetComponentsInChildren<Renderer>(true))
-                    r.sharedMaterial = charMat;
-            }
+            if (srcTex != null) charMat.SetTexture("_BaseMap", srcTex);
+            charMat.SetColor("_BaseColor", srcTex != null ? Color.white : srcColor);
+            EditorUtility.SetDirty(charMat);
+            AssetDatabase.SaveAssets();
 
-            // --- CameraRig + Camera ---
-            var rig = new GameObject("CameraRig");
-            rig.transform.SetParent(player.transform, false);
-            rig.transform.localPosition = new Vector3(0f, 1.65f, 0f);
-            var cam = rig.AddComponent<Camera>();
-            cam.nearClipPlane = 0.05f;
-            rig.AddComponent<AudioListener>();
-
-            // --- Bones ---
-            Transform root = modelInstance.transform;
-            Transform head = FindBone(root, "Head");
-            Transform lUpper = FindBone(root, "LeftArm");
-            Transform lFore = FindBone(root, "LeftForeArm");
-            Transform lHand = FindBone(root, "LeftHand");
-            Transform rUpper = FindBone(root, "RightArm");
-            Transform rFore = FindBone(root, "RightForeArm");
-            Transform rHand = FindBone(root, "RightHand");
-
-            Transform hips = FindBone(root, "Hips");
-            Transform spine = FindBone(root, "Spine");
-            Transform spine1 = FindBone(root, "Spine1");
-            Transform spine2 = FindBone(root, "Spine2");
-            Transform neck = FindBone(root, "Neck");
-            Transform lUpLeg = FindBone(root, "LeftUpLeg");
-            Transform lLeg = FindBone(root, "LeftLeg");
-            Transform lFoot = FindBone(root, "LeftFoot");
-            Transform rUpLeg = FindBone(root, "RightUpLeg");
-            Transform rLeg = FindBone(root, "RightLeg");
-            Transform rFoot = FindBone(root, "RightFoot");
-
-            if (head != null)
-                rig.transform.position = head.position;
-
-            // --- Composants joueur ---
-            player.AddComponent<PlayerInputReader>();
-            var body = player.AddComponent<PlayerBody>();
-            var camera = player.AddComponent<PlayerCamera>();
-            var animator = player.AddComponent<PlayerProceduralAnimator>();
-            var hands = player.AddComponent<PlayerHands>();
-            var remote = player.AddComponent<RemotePlayer>();
-            remote.enabled = false; // dormant ; activé par le réseau uniquement pour les distants
-
-            // Survie + mort (faible adhérence : communiquent par événements / registre)
-            player.AddComponent<PlayerVitals>();
-            player.AddComponent<PlayerRagdoll>();
-            player.AddComponent<SpectatorController>(); // dormant tant que vivant (gardé par _active)
-            player.AddComponent<PlayerDeath>();
-
-            // --- Câblage via SerializedObject (champs privés [SerializeField]) ---
-            var soCam = new SerializedObject(camera);
-            SetRef(soCam, "_cameraRig", rig.transform);
-            SetRef(soCam, "_headBone", head);
-            soCam.ApplyModifiedPropertiesWithoutUndo();
-
-            var soHands = new SerializedObject(hands);
-            SetRef(soHands, "_leftUpperArm", lUpper);
-            SetRef(soHands, "_leftForeArm", lFore);
-            SetRef(soHands, "_leftHand", lHand);
-            SetRef(soHands, "_rightUpperArm", rUpper);
-            SetRef(soHands, "_rightForeArm", rFore);
-            SetRef(soHands, "_rightHand", rHand);
-            soHands.ApplyModifiedPropertiesWithoutUndo();
-
-            var soAnim = new SerializedObject(animator);
-            SetRef(soAnim, "_spine", spine);
-            SetRef(soAnim, "_spine1", spine1);
-            SetRef(soAnim, "_spine2", spine2);
-            SetRef(soAnim, "_neck", neck);
-            SetRef(soAnim, "_head", head);
-            SetRef(soAnim, "_hips", hips);
-            SetRef(soAnim, "_leftUpLeg", lUpLeg);
-            SetRef(soAnim, "_leftLeg", lLeg);
-            SetRef(soAnim, "_leftFoot", lFoot);
-            SetRef(soAnim, "_rightUpLeg", rUpLeg);
-            SetRef(soAnim, "_rightLeg", rLeg);
-            SetRef(soAnim, "_rightFoot", rFoot);
-            soAnim.ApplyModifiedPropertiesWithoutUndo();
-
-            // Avertit si des bones manquent (noms inattendus).
-            WarnMissing(head, lUpper, lFore, lHand, rUpper, rFore, rHand);
-
-            return player;
+            foreach (var r in modelInstance.GetComponentsInChildren<Renderer>(true))
+                r.sharedMaterial = charMat;
         }
 
         private static Material GetOrCreateCharacterMaterial()
@@ -216,32 +215,6 @@ namespace Game.Player.EditorTools
             var prop = so.FindProperty(property);
             if (prop != null) prop.objectReferenceValue = value;
             else Debug.LogWarning($"[PlayerBuilder] Champ sérialisé introuvable : {property}");
-        }
-
-        /// <summary>
-        /// Recherche récursive d'un bone par nom, en ignorant un éventuel préfixe "namespace:".
-        /// </summary>
-        private static Transform FindBone(Transform root, string boneName)
-        {
-            foreach (var t in root.GetComponentsInChildren<Transform>(true))
-            {
-                string n = t.name;
-                int colon = n.IndexOf(':');
-                if (colon >= 0) n = n.Substring(colon + 1);
-                if (string.Equals(n, boneName, System.StringComparison.OrdinalIgnoreCase))
-                    return t;
-            }
-            return null;
-        }
-
-        private static void WarnMissing(params Transform[] bones)
-        {
-            string[] names = { "Head", "LeftArm", "LeftForeArm", "LeftHand", "RightArm", "RightForeArm", "RightHand" };
-            for (int i = 0; i < bones.Length; i++)
-            {
-                if (bones[i] == null)
-                    Debug.LogWarning($"[PlayerBuilder] Bone non résolu : {names[i]} — à assigner à la main.");
-            }
         }
     }
 }

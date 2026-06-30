@@ -4,15 +4,16 @@ using UnityEngine;
 namespace Game.Player
 {
     /// <summary>
-    /// Vrai ragdoll par os : construit (au réveil) un Rigidbody + collider + CharacterJoint sur chaque
-    /// membre du squelette Mixamo (Y Bot), avec des limites d'amplitude pour éviter les poses
-    /// impossibles (tête à l'envers, coude/genou hyper-étendus…).
+    /// Ragdoll par os "à la demande" (mort / chute) sur un personnage ANIMÉ.
+    /// Construit au réveil un Rigidbody + collider + CharacterJoint sur chaque membre du squelette
+    /// Mixamo (Y Bot), avec des limites d'amplitude pour éviter les poses impossibles (tête à
+    /// l'envers, coude/genou hyper-étendus).
     ///
-    /// Tant que le joueur est vivant : os kinematic + colliders désactivés (l'animation procédurale
-    /// pilote tout). À la mort, <see cref="Activate"/> coupe les contrôleurs et passe les os en
-    /// physique : ils s'effondrent et réagissent au sol et entre eux.
+    /// Vivant : os kinematic + colliders OFF + Animator pilote la pose. À la mort, <see cref="Activate"/>
+    /// coupe l'Animator + les contrôleurs et passe les os en physique : ils s'effondrent et réagissent
+    /// au sol et entre eux, en partant de la dernière pose animée (donc transition naturelle).
     ///
-    /// Aucune dépendance externe : agit sur son propre hiérarchie d'os.
+    /// Aucune dépendance externe : agit sur sa propre hiérarchie.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class PlayerRagdoll : MonoBehaviour
@@ -22,30 +23,27 @@ namespace Game.Player
         private bool _activated;
         private float _height = 1.8f;
 
-        private void Awake()
-        {
-            BuildRagdoll();
-            SetRagdoll(false, Vector3.zero); // dormant tant que vivant
-        }
+        // NB : on NE construit PAS le ragdoll à l'Awake. Tant que le joueur est vivant, aucun Rigidbody
+        // n'est ajouté aux os → l'Animator pose le squelette librement. Le ragdoll est construit
+        // uniquement à la mort (Activate), à partir de la dernière pose animée.
 
         public void Activate()
         {
             if (_activated) return;
             _activated = true;
-            if (!_built) BuildRagdoll();
+            BuildRagdoll();
 
-            // Stoppe tout ce qui pilote le corps/les os.
-            Disable<PlayerBody>();
+            // Coupe l'animation et tout ce qui pilote/contraint le corps.
+            foreach (var a in GetComponentsInChildren<Animator>(true)) a.enabled = false;
+            Disable<FirstPersonController>();
             Disable<PlayerInputReader>();
-            Disable<PlayerProceduralAnimator>();
-            Disable<PlayerHands>();
+            Disable<PlayerAnimator>();
             Disable<PlayerCamera>();
             Disable<RemotePlayer>();
 
-            // Récupère l'élan du corps puis neutralise la capsule racine (sinon elle maintient debout).
+            // Récupère l'élan, neutralise la capsule (CharacterController) qui maintiendrait debout.
             Vector3 vel = Vector3.zero;
-            if (TryGetComponent<Rigidbody>(out var rootRb)) { vel = rootRb.linearVelocity; rootRb.isKinematic = true; }
-            if (TryGetComponent<Collider>(out var rootCol)) rootCol.enabled = false;
+            if (TryGetComponent<CharacterController>(out var cc)) { vel = cc.velocity; cc.enabled = false; }
 
             SetRagdoll(true, vel);
         }
@@ -91,7 +89,7 @@ namespace Game.Player
                 AddJoint(head, spineRb, twist: 25f, swing1: 25f, swing2: 20f);
             }
 
-            // Bras (épaule très souple, coude limité à un plan)
+            // Bras (épaule souple, coude limité à un plan)
             BuildLimb(lArm, lFore, lHand, spineRb, 2.5f, 1.5f, 0.045f, 0.04f);
             BuildLimb(rArm, rFore, rHand, spineRb, 2.5f, 1.5f, 0.045f, 0.04f);
 
@@ -112,10 +110,9 @@ namespace Game.Player
             if (isLeg) AddJoint(upper, parent, twist: 25f, swing1: 45f, swing2: 45f);
             else AddJoint(upper, parent, twist: 40f, swing1: 70f, swing2: 70f);
 
-            var lowerRb = AddBody(lower, lowerMass);
+            AddBody(lower, lowerMass);
             AddCapsule(lower, tip, lowerR * _height);
-            // Coude / genou : flexion sur un seul plan, pas d'hyper-extension.
-            AddJoint(lower, upperRb, twist: 10f, swing1: 90f, swing2: 8f);
+            AddJoint(lower, upperRb, twist: 10f, swing1: 90f, swing2: 8f); // coude / genou
         }
 
         // --- Helpers physiques ---
@@ -124,7 +121,7 @@ namespace Game.Player
         {
             if (!t.TryGetComponent<Rigidbody>(out var rb)) rb = t.gameObject.AddComponent<Rigidbody>();
             rb.mass = mass;
-            rb.interpolation = RigidbodyInterpolation.None; // None tant que vivant (l'anim pilote les os)
+            rb.interpolation = RigidbodyInterpolation.None;
             rb.isKinematic = true;
             _bodies.Add(rb);
             return rb;
@@ -137,16 +134,11 @@ namespace Game.Player
             if (child != null)
             {
                 Vector3 local = bone.InverseTransformPoint(child.position);
-                float len = local.magnitude;
-                int axis = AbsDominantAxis(local);
-                cap.direction = axis;
-                cap.height = Mathf.Max(len, cap.radius * 2f);
+                cap.direction = AbsDominantAxis(local);
+                cap.height = Mathf.Max(local.magnitude, cap.radius * 2f);
                 cap.center = local * 0.5f;
             }
-            else
-            {
-                cap.height = cap.radius * 3f;
-            }
+            else cap.height = cap.radius * 3f;
             cap.enabled = false;
         }
 
@@ -154,7 +146,6 @@ namespace Game.Player
         {
             var s = bone.gameObject.AddComponent<SphereCollider>();
             s.radius = Mathf.Max(0.03f, radius);
-            // Décale la sphère vers le haut du cou pour englober la tête.
             if (from != null) s.center = bone.InverseTransformPoint(self.position + (self.position - from.position).normalized * radius);
             s.enabled = false;
         }
