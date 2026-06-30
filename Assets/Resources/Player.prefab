@@ -1171,10 +1171,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 740335481db8c004fac3f91ee19c1bda, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Game.Player::Game.Player.PlayerHandItem
+  _viewPosition: {x: 0.174, y: -0.093, z: 0.231}
+  _viewEuler: {x: 0, y: 0, z: 0}
+  _viewScale: 1
   _handBoneName: RightHand
-  _localPosition: {x: 0.0213, y: 0.1115, z: 0.0639}
-  _localEuler: {x: 0, y: 0, z: 0}
-  _scale: 1
+  _handPosition: {x: 0.0213, y: 0.1115, z: 0.0639}
+  _handEuler: {x: 0, y: 0, z: 0}
+  _handScale: 1
+  _dipDistance: 0.4
+  _dipDownTime: 0.09
+  _dipUpTime: 0.13
 --- !u!114 &7435624799462822517
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1187,8 +1193,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4f15e987d20a3db439e71a9931a6929b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Game.Player::Game.Player.PlayerInteractor
-  _range: 3
+  _range: 3.5
   _grabDelay: 1
+  _settleDelay: 0.6
   _mask:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -1269,6 +1276,7 @@ GameObject:
   - component: {fileID: 8872426551772133896}
   - component: {fileID: 2025360634229843749}
   - component: {fileID: 8466870853013981694}
+  - component: {fileID: 7726910960277684558}
   m_Layer: 0
   m_Name: Model
   m_TagString: Untagged
@@ -1333,6 +1341,8 @@ MonoBehaviour:
   _footOffset: 0.1
   _liftThreshold: 0.18
   _maxStepDown: 0.12
+  _pelvisBend: 0.6
+  _pelvisSmooth: 10
   _mask:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -1352,6 +1362,21 @@ MonoBehaviour:
   _bodyWeight: 0.25
   _headWeight: 1
   _smoothing: 12
+--- !u!114 &7726910960277684558
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2777257008168090312}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cf63a6435bc82124fae003fbebb1344b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Game.Player::Game.Player.PlayerHoldIK
+  _weight: 0.75
+  _holdOffset: {x: 0.16, y: 1.3, z: 0.38}
+  _smoothing: 6
 --- !u!1 &2906096241962567135
 GameObject:
   m_ObjectHideFlags: 0
