@@ -48,7 +48,7 @@ namespace Game.World
             int layerMask = mask.value == 0 ? ~0 : mask.value;
             Vector3 dir = Quaternion.Euler(0f, angleDeg, 0f) * Vector3.forward;
 
-            float startDist = islandSize * 0.6f;  // juste à l'extérieur de l'île
+            float startDist = islandSize * 0.72f;  // hors de l'île (marge pour lobes allongés/excentrés)
             const float step = 0.5f;
 
             for (float d = startDist; d > 0f; d -= step)
