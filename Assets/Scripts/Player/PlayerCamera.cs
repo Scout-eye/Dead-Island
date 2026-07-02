@@ -65,7 +65,13 @@ namespace Game.Player
             if (_controller == null || _controller.IsOwner) LockCursor(true);
         }
 
-        private void OnDisable() => LockCursor(false);
+        // Ne rend le curseur QUE si c'est la caméra du joueur LOCAL qui se désactive (mort, etc.).
+        // La désactivation de la caméra d'un joueur DISTANT (ConfigurePlayer) ne doit pas délocker
+        // notre souris — c'était la cause de la "caméra figée jusqu'à Échap" en rejoignant.
+        private void OnDisable()
+        {
+            if (_controller == null || _controller.IsOwner) LockCursor(false);
+        }
 
         private void Update()
         {

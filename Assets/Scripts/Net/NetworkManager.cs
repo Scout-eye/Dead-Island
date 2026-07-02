@@ -25,7 +25,7 @@ namespace Game.Net
         // NoNagle = envoi immédiat (pas de regroupement) => latence plus basse.
         private const SendType StateSendType = SendType.Unreliable | SendType.NoNagle;
 
-        private enum MsgType : byte { PlayerState = 0, GameEvent = 1 }
+        private enum MsgType : byte { PlayerState = 0, GameEvent = 1, Voice = 2 }
 
         public static NetworkManager Instance { get; private set; }
 
@@ -52,6 +52,7 @@ namespace Game.Net
         private float _worldSize;
         private GameObject _worldRoot;
         private bool _hostLost;
+        private bool _warnedBadState; // avertit une seule fois en cas de versions différentes
 
         private readonly Dictionary<ulong, RemotePlayer> _remotes = new Dictionary<ulong, RemotePlayer>();
         private readonly Dictionary<uint, ulong> _connToSteam = new Dictionary<uint, ulong>(); // host: connId -> steamId
@@ -59,6 +60,11 @@ namespace Game.Net
         private float _sendTimer;
         private uint _tick;
         private readonly byte[] _sendBuffer = new byte[1 + 8 + PlayerState.Size];
+
+        // Multi : le jeu ne doit JAMAIS se mettre en pause quand la fenêtre perd le focus
+        // (sinon : vitals gelées en alt-tab, et un host défocalisé ne relaie plus rien).
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void KeepRunningInBackground() => Application.runInBackground = true;
 
         public static NetworkManager EnsureExists()
         {
@@ -109,6 +115,7 @@ namespace Game.Net
         /// <summary>Retour salle d'attente : détruit monde + joueurs mais GARDE la connexion ouverte.</summary>
         public void ReturnToRoom()
         {
+            VoiceChat.StopRecording();
             if (_localPlayer != null) Destroy(_localPlayer);
             _localPlayer = null; _localBody = null; _localCam = null; _localVitals = null; _localInventory = null;
 
@@ -143,6 +150,7 @@ namespace Game.Net
         /// <summary>Quitte la partie : coupe le réseau, détruit le monde et tous les joueurs.</summary>
         public void LeaveGame()
         {
+            VoiceChat.StopRecording();
             ShutdownTransport();
 
             if (_localPlayer != null) Destroy(_localPlayer);
@@ -249,6 +257,18 @@ namespace Game.Net
             };
         }
 
+        /// <summary>Envoie un paquet voix compressé (chat de proximité). Appelé par VoiceChat.</summary>
+        public void SendVoice(byte[] compressed)
+        {
+            if (!_running || compressed == null || compressed.Length == 0) return;
+            var buf = new byte[1 + 8 + compressed.Length];
+            buf[0] = (byte)MsgType.Voice;
+            BitConverter.TryWriteBytes(new Span<byte>(buf, 1, 8), SteamClient.SteamId.Value);
+            Buffer.BlockCopy(compressed, 0, buf, 9, compressed.Length);
+            if (_isHost) BroadcastToClients(buf, null);
+            else _connection?.Connection.SendMessage(buf, StateSendType); // unreliable : ok pour la voix
+        }
+
         /// <summary>Envoie un événement de jeu fiable (host -> clients, ou client -> host).</summary>
         private void BroadcastGameEvent(byte eventId)
         {
@@ -284,6 +304,19 @@ namespace Game.Net
 
             if (type == MsgType.PlayerState)
             {
+                // Garde-fou : un state trop court = builds de versions différentes (protocole changé).
+                // On ignore proprement au lieu de jeter une exception qui casserait toute la réception.
+                if (data.Length < 9 + PlayerState.Size)
+                {
+                    if (!_warnedBadState)
+                    {
+                        _warnedBadState = true;
+                        Debug.LogWarning($"[Net] PlayerState de {data.Length - 9} octets (attendu {PlayerState.Size}) — " +
+                                         "les deux machines ont des versions différentes du jeu ! Refais un build des deux côtés.");
+                    }
+                    return;
+                }
+
                 var state = PlayerState.Deserialize(data, 9);
                 GetOrCreateRemote(sender).PushState(state);
 
@@ -293,6 +326,14 @@ namespace Game.Net
             else if (type == MsgType.GameEvent && data.Length >= 10)
             {
                 if (data[9] == EvtReturnToRoom) ReturnToRoom();
+            }
+            else if (type == MsgType.Voice && data.Length > 9)
+            {
+                var rp = GetOrCreateRemote(sender);
+                if (rp != null) VoicePlayer.Attach(rp.gameObject, sender).Receive(data, 9, data.Length - 9);
+
+                // Host : relaie la voix aux autres clients (étoile), comme les states.
+                if (_isHost) BroadcastToClients(data, from);
             }
         }
 
@@ -333,6 +374,7 @@ namespace Game.Net
             _localCam = _localPlayer.GetComponent<PlayerCamera>();
             _localVitals = _localPlayer.GetComponent<PlayerVitals>();
             _localInventory = _localPlayer.GetComponent<PlayerInventory>();
+            VoiceChat.StartRecording(); // chat vocal de proximité (micro ouvert en partie)
         }
 
         private RemotePlayer GetOrCreateRemote(ulong steamId)
@@ -344,6 +386,7 @@ namespace Game.Net
             var go = Instantiate(prefab, ComputeSpawn(_remotes.Count + 1), Quaternion.identity);
             go.name = $"Player (Remote {steamId})";
             ConfigurePlayer(go, owner: false);
+            VoicePlayer.Attach(go, steamId); // voix de proximité (créé tôt pour le menu volumes)
             var rp = go.GetComponent<RemotePlayer>();
             _remotes[steamId] = rp;
             Debug.Log($"[Net] Joueur distant créé : {steamId} ({(_isHost ? "host reçoit client" : "client reçoit relai")}).");

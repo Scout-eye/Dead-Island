@@ -33,6 +33,7 @@ namespace Game.Net
         private Text _seedText;
         private Button _startButton;
         private GameObject _pausePanel;
+        private GameObject _voiceSection; // sliders de volume vocal par joueur (menu pause)
         private GameObject _controlsPanel;
         private Action _controlsBack;
         private readonly List<(GameControls.Entry entry, Text keyLabel)> _rebindRows = new List<(GameControls.Entry, Text)>();
@@ -138,8 +139,39 @@ namespace Game.Net
             MakeText(_pausePanel.transform, "Pause", 28);
             MakeButton(_pausePanel.transform, "Reprendre", () => SetPaused(false));
             MakeButton(_pausePanel.transform, "Contrôles", () => ShowControls(() => _pausePanel.SetActive(true)));
+
+            // Volume vocal individuel des autres joueurs (rempli à l'ouverture du menu).
+            _voiceSection = new GameObject("VoiceVolumes", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            _voiceSection.transform.SetParent(_pausePanel.transform, false);
+            var vlg = _voiceSection.GetComponent<VerticalLayoutGroup>();
+            vlg.spacing = 2;
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = false;
+            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandHeight = false;
+            _voiceSection.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
             MakeButton(_pausePanel.transform, "Menu principal", ReturnToMenu);
             _pausePanel.SetActive(false);
+        }
+
+        /// <summary>Une ligne nom + slider par joueur distant présent dans la partie.</summary>
+        private void RefreshVoiceList()
+        {
+            if (_voiceSection == null) return;
+            foreach (Transform child in _voiceSection.transform) Destroy(child.gameObject);
+
+            var players = FindObjectsByType<VoicePlayer>(FindObjectsSortMode.None);
+            _voiceSection.SetActive(players.Length > 0);
+            if (players.Length == 0) return;
+
+            MakeText(_voiceSection.transform, "Volume des joueurs", 17);
+            foreach (var vp in players)
+            {
+                MakeText(_voiceSection.transform, vp.DisplayName, 14, TextAnchor.MiddleLeft);
+                var p = vp; // capture
+                MakeSlider(_voiceSection.transform, p.UserVolume, v => p.UserVolume = v);
+            }
         }
 
         private void BuildControlsPanel()
@@ -245,6 +277,7 @@ namespace Game.Net
         {
             _paused = paused;
             if (_pausePanel != null) _pausePanel.SetActive(paused);
+            if (paused) RefreshVoiceList();
             Cursor.lockState = paused ? CursorLockMode.None : CursorLockMode.Locked;
             Cursor.visible = paused;
         }
@@ -450,6 +483,56 @@ namespace Game.Net
             rt.anchorMax = Vector2.one;
             rt.offsetMin = rt.offsetMax = Vector2.zero;
             return btn;
+        }
+
+        private static Slider MakeSlider(Transform parent, float value, UnityAction<float> onChanged)
+        {
+            var go = new GameObject("Slider", typeof(RectTransform), typeof(Slider));
+            go.transform.SetParent(parent, false);
+            var le = go.AddComponent<LayoutElement>();
+            le.minHeight = le.preferredHeight = 22;
+
+            // Fond
+            var bg = new GameObject("BG", typeof(RectTransform), typeof(Image));
+            bg.transform.SetParent(go.transform, false);
+            var bgRt = (RectTransform)bg.transform;
+            bgRt.anchorMin = new Vector2(0f, 0.35f); bgRt.anchorMax = new Vector2(1f, 0.65f);
+            bgRt.offsetMin = bgRt.offsetMax = Vector2.zero;
+            bg.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.15f);
+
+            // Remplissage
+            var fillArea = new GameObject("FillArea", typeof(RectTransform));
+            fillArea.transform.SetParent(go.transform, false);
+            var faRt = (RectTransform)fillArea.transform;
+            faRt.anchorMin = new Vector2(0f, 0.35f); faRt.anchorMax = new Vector2(1f, 0.65f);
+            faRt.offsetMin = new Vector2(0f, 0f); faRt.offsetMax = new Vector2(-8f, 0f);
+            var fill = new GameObject("Fill", typeof(RectTransform), typeof(Image));
+            fill.transform.SetParent(fillArea.transform, false);
+            var fillRt = (RectTransform)fill.transform;
+            fillRt.offsetMin = fillRt.offsetMax = Vector2.zero;
+            fill.GetComponent<Image>().color = new Color(0.18f, 0.32f, 0.45f, 1f);
+
+            // Poignée
+            var handleArea = new GameObject("HandleArea", typeof(RectTransform));
+            handleArea.transform.SetParent(go.transform, false);
+            var haRt = (RectTransform)handleArea.transform;
+            haRt.anchorMin = Vector2.zero; haRt.anchorMax = Vector2.one;
+            haRt.offsetMin = new Vector2(6f, 0f); haRt.offsetMax = new Vector2(-6f, 0f);
+            var handle = new GameObject("Handle", typeof(RectTransform), typeof(Image));
+            handle.transform.SetParent(handleArea.transform, false);
+            var hRt = (RectTransform)handle.transform;
+            hRt.sizeDelta = new Vector2(14f, 0f);
+            handle.GetComponent<Image>().color = Color.white;
+
+            var s = go.GetComponent<Slider>();
+            s.fillRect = fillRt;
+            s.handleRect = hRt;
+            s.targetGraphic = handle.GetComponent<Image>();
+            s.minValue = 0f;
+            s.maxValue = 1f;
+            s.value = value;
+            s.onValueChanged.AddListener(onChanged);
+            return s;
         }
 
         private static InputField MakeInputField(Transform parent, string placeholder)
