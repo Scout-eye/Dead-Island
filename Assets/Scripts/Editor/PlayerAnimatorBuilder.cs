@@ -55,11 +55,12 @@ namespace Game.Player.EditorTools
             var fall = FindClip("fall", "fallingidle", "falling");
             // Autres
             var swim = FindClip("swim");
+            var tread = FindClip("treadingwater"); // surplace dans l'eau (TreadingWater.fbx)
             var interact = FindClip("interact");
 
             Debug.Log($"[AnimatorBuilder] Locomotion — idle:{Y(idle)} fwd(W/R):{Y(fwdW)}/{Y(fwdR)} " +
                       $"back(W/R):{Y(backW)}/{Y(backR)} L(W/R):{Y(leftW)}/{Y(leftR)} R(W/R):{Y(rightW)}/{Y(rightR)}");
-            Debug.Log($"[AnimatorBuilder] Saut — jump:{Y(jump)} fall:{Y(fall)} | swim:{Y(swim)} interact:{Y(interact)}");
+            Debug.Log($"[AnimatorBuilder] Saut — jump:{Y(jump)} fall:{Y(fall)} | swim:{Y(swim)} tread:{Y(tread)} interact:{Y(interact)}");
 
             if (idle == null && fwdW == null)
             {
@@ -129,11 +130,25 @@ namespace Game.Player.EditorTools
                 jumpToLoco.hasExitTime = true; jumpToLoco.exitTime = 0.4f; jumpToLoco.duration = 0.18f;
             }
 
-            // --- Nage (bool Swim) ---
-            if (swim != null)
+            // --- Nage (bool Swim) : surplace (treading water) ↔ nage avant, blendé sur Speed ---
+            if (swim != null || tread != null)
             {
-                var swimState = sm.AddState("Swim");
-                swimState.motion = swim;
+                AnimatorState swimState;
+                if (swim != null && tread != null)
+                {
+                    swimState = controller.CreateBlendTreeInController("Swim", out var swimTree);
+                    swimTree.blendType = BlendTreeType.Simple1D;
+                    swimTree.blendParameter = "Speed";
+                    swimTree.useAutomaticThresholds = false;
+                    swimTree.AddChild(tread, 0f);   // immobile : surplace
+                    swimTree.AddChild(swim, 2f);    // = vitesse de nage du FirstPersonController
+                }
+                else
+                {
+                    swimState = sm.AddState("Swim");
+                    swimState.motion = swim != null ? swim : tread;
+                }
+
                 var toSwim = sm.AddAnyStateTransition(swimState);
                 toSwim.AddCondition(AnimatorConditionMode.If, 0, "Swim");
                 toSwim.hasExitTime = false; toSwim.duration = 0.2f; toSwim.canTransitionToSelf = false;

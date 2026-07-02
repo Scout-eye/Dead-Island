@@ -27,6 +27,7 @@ namespace Game.Player
         private static readonly int GroundedHash = Animator.StringToHash("Grounded");
         private static readonly int JumpHash = Animator.StringToHash("Jump");
         private static readonly int InteractHash = Animator.StringToHash("Interact");
+        private static readonly int SwimHash = Animator.StringToHash("Swim");
 
         private void Awake()
         {
@@ -57,6 +58,7 @@ namespace Game.Player
             _animator.SetFloat(MoveXHash, _moveX);
             _animator.SetFloat(MoveZHash, _moveZ);
             _animator.SetBool(GroundedHash, _controller.IsGrounded);
+            _animator.SetBool(SwimHash, _controller.IsSwimming);
 
             // Saut : déclenché à l'instant T (clip part tout de suite, pas en retard).
             if (_controller.ConsumeJumped()) _animator.SetTrigger(JumpHash);

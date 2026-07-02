@@ -244,6 +244,7 @@ namespace Game.Net
                 Velocity = _localBody.NetworkVelocity,
                 Dead = _localVitals != null && _localVitals.IsDead,
                 Grounded = _localBody.IsGrounded,
+                Swimming = _localBody.IsSwimming,
                 HeldItem = ItemDatabase.GetNetId(_localInventory != null ? _localInventory.SelectedItem : null)
             };
         }

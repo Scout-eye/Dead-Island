@@ -29,13 +29,22 @@ namespace Game.World
 
         [Header("Vent")]
         [SerializeField] private float _windSpeed = 3f;
+        [Tooltip("Largeur (m) du fondu d'opacité aux abords de la zone (évite le pop au rebouclage).")]
+        [SerializeField] private float _fadeBand = 50f;
+
+        [Header("Ombres")]
+        [Tooltip("Les nuages projettent leur ombre sur l'île quand ils passent devant le soleil.")]
+        [SerializeField] private bool _castShadows = true;
 
         [Header("Test (hors réseau)")]
         [SerializeField] private bool _generateOnStart = true;
         [SerializeField] private int _testSeed = 1337;
 
         private static Material _cloudMaterial; // partagé (pas de fuite à la régénération)
+        private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private Transform[] _clouds;
+        private MeshRenderer[] _renderers;
+        private MaterialPropertyBlock _mpb;
         private Vector3 _wind;
 
         private void Start()
@@ -67,9 +76,11 @@ namespace Game.World
             _wind = Quaternion.Euler(0f, windAngle, 0f) * Vector3.forward * _windSpeed;
 
             _clouds = new Transform[_cloudCount];
+            _renderers = new MeshRenderer[_cloudCount];
+            if (_mpb == null) _mpb = new MaterialPropertyBlock();
             for (int i = 0; i < _cloudCount; i++)
             {
-                var cloud = BuildCloud(rng, $"Cloud{i}");
+                var cloud = BuildCloud(rng, $"Cloud{i}", out _renderers[i]);
                 double ang = rng.NextDouble() * 2.0 * System.Math.PI;
                 float dist = Mathf.Sqrt((float)rng.NextDouble()) * _areaRadius; // uniforme dans le disque
                 float alt = Mathf.Lerp(_minAltitude, _maxAltitude, (float)rng.NextDouble());
@@ -90,15 +101,28 @@ namespace Game.World
                 if (c == null) continue;
                 c.localPosition += delta;
 
-                // Sorti de la zone → réapparaît côté au-vent (boucle discrète, loin de la caméra).
+                // Sorti de la zone → réapparaît côté au-vent (invisible : l'opacité y est ~0).
                 Vector3 flat = c.localPosition; flat.y = 0f;
-                if (flat.magnitude > _areaRadius)
+                float dist = flat.magnitude;
+                if (dist > _areaRadius)
+                {
                     c.localPosition -= flat.normalized * (_areaRadius * 1.95f);
+                    dist = _areaRadius * 0.95f;
+                }
+
+                // Fondu d'opacité aux abords de la zone (pas de pop à l'apparition/disparition).
+                if (_renderers[i] != null)
+                {
+                    var col = _tint;
+                    col.a = Mathf.InverseLerp(_areaRadius, _areaRadius - _fadeBand, dist);
+                    _mpb.SetColor(BaseColorId, col);
+                    _renderers[i].SetPropertyBlock(_mpb);
+                }
             }
         }
 
         /// <summary>Un nuage = chapelet de sphères aplaties (grosses au centre) fusionné en un mesh.</summary>
-        private Transform BuildCloud(System.Random rng, string name)
+        private Transform BuildCloud(System.Random rng, string name, out MeshRenderer renderer)
         {
             Mesh blob = Resources.GetBuiltinResource<Mesh>("New-Sphere.fbx");
             int blobs = rng.Next(_blobsPerCloud.x, _blobsPerCloud.y + 1);
@@ -137,17 +161,25 @@ namespace Game.World
                 var shader = Shader.Find("Universal Render Pipeline/Lit");
                 if (shader != null)
                 {
+                    // Lit TRANSPARENT (ZWrite on : garde le volume des blobs) — l'alpha du fondu
+                    // est poussé par MaterialPropertyBlock (par nuage, matériau partagé).
                     _cloudMaterial = new Material(shader);
                     _cloudMaterial.SetFloat("_Smoothness", 0f);
+                    _cloudMaterial.SetFloat("_Surface", 1f);
+                    _cloudMaterial.SetOverrideTag("RenderType", "Transparent");
+                    _cloudMaterial.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                    _cloudMaterial.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                    _cloudMaterial.SetFloat("_ZWrite", 1f);
+                    _cloudMaterial.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                    _cloudMaterial.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
                 }
             }
-            if (_cloudMaterial != null)
-            {
-                _cloudMaterial.SetColor("_BaseColor", _tint);
-                mr.sharedMaterial = _cloudMaterial;
-            }
-            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            if (_cloudMaterial != null) mr.sharedMaterial = _cloudMaterial;
+            mr.shadowCastingMode = _castShadows
+                ? UnityEngine.Rendering.ShadowCastingMode.On
+                : UnityEngine.Rendering.ShadowCastingMode.Off;
             mr.receiveShadows = false;
+            renderer = mr;
             return go.transform;
         }
 
@@ -161,6 +193,7 @@ namespace Game.World
                 else DestroyImmediate(c.gameObject);
             }
             _clouds = null;
+            _renderers = null;
         }
     }
 }

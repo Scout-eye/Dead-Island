@@ -91,7 +91,7 @@ namespace Game.Player
         private void Apply(PlayerState s)
         {
             if (_body != null)
-                _body.ApplyNetworkTransform(s.Position, s.Yaw, s.Velocity, s.Grounded);
+                _body.ApplyNetworkTransform(s.Position, s.Yaw, s.Velocity, s.Grounded, s.Swimming);
             if (_camera != null)
                 _camera.SetNetworkLook(s.LookYaw, s.Pitch);
             if (_headAim != null)
@@ -121,6 +121,7 @@ namespace Game.Player
                 Velocity = Vector3.Lerp(a.Velocity, b.Velocity, t),
                 Dead = b.Dead,
                 Grounded = b.Grounded,
+                Swimming = b.Swimming,
                 HeldItem = b.HeldItem
             };
         }

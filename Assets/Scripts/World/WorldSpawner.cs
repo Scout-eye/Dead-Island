@@ -35,7 +35,7 @@ namespace Game.World
             water.transform.SetParent(root.transform);
 
             DayNightCycle.Create(root.transform);              // cycle jour/nuit (10 min, 16j/8n)
-            CloudField.Create(root.transform, seed, size * 1.4f); // nuages (déterministes via seed)
+            CloudField.Create(root.transform, seed, size * 1.7f); // nuages (déterministes via seed)
 
             Physics.SyncTransforms();             // pour que les raycasts de spawn voient le collider
 

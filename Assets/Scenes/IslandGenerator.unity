@@ -383,7 +383,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _seed: 1337
-  _players: 1
+  _players: 8
   _randomSeedOnPlay: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:

@@ -20,6 +20,7 @@ namespace Game.Player
         public Vector3 Velocity; // vélocité (extrapolation + animation distante)
         public bool Dead;        // état de mort (spectate + détection "tous morts")
         public bool Grounded;    // au sol (anime correctement le saut/chute distant)
+        public bool Swimming;    // nage en surface (anim Swim chez les distants)
         public byte HeldItem;    // id réseau de l'objet tenu (0 = aucun) — pour l'afficher chez les autres
 
         /// <summary>Taille fixe en octets d'un state sérialisé.</summary>
@@ -31,6 +32,7 @@ namespace Game.Player
                               + sizeof(float) * 3    // Velocity
                               + sizeof(byte)         // Dead
                               + sizeof(byte)         // Grounded
+                              + sizeof(byte)         // Swimming
                               + sizeof(byte);        // HeldItem
 
         public byte[] Serialize()
@@ -52,6 +54,7 @@ namespace Game.Player
             o = Write(buffer, o, Velocity.x); o = Write(buffer, o, Velocity.y); o = Write(buffer, o, Velocity.z);
             buffer[o++] = (byte)(Dead ? 1 : 0);
             buffer[o++] = (byte)(Grounded ? 1 : 0);
+            buffer[o++] = (byte)(Swimming ? 1 : 0);
             buffer[o++] = HeldItem;
             return o;
         }
@@ -68,6 +71,7 @@ namespace Game.Player
             s.Velocity = ReadVector3(buffer, ref o);
             s.Dead = buffer[o++] != 0;
             s.Grounded = buffer[o++] != 0;
+            s.Swimming = buffer[o++] != 0;
             s.HeldItem = buffer[o++];
             return s;
         }

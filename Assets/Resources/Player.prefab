@@ -1019,6 +1019,11 @@ MonoBehaviour:
   _jumpHeight: 1.1
   _gravity: -22
   _coyoteTime: 0.12
+  _waterLevel: 0
+  _swimStartDepth: 1.25
+  _swimBodyDepth: 1.15
+  _swimSpeed: 2
+  _swimSprintSpeed: 3.2
   _maxHeadYaw: 70
   _bodyTurnSpeed: 360
 --- !u!114 &1033805653385345364

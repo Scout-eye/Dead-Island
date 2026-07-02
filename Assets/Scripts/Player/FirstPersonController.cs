@@ -34,6 +34,15 @@ namespace Game.Player
         [Tooltip("Tolérance de saut juste après avoir quitté le sol (s).")]
         [SerializeField] private float _coyoteTime = 0.12f;
 
+        [Header("Nage (surface, eau à y = niveau)")]
+        [SerializeField] private float _waterLevel = 0f;
+        [Tooltip("Profondeur d'eau à partir de laquelle le joueur n'a plus pied.")]
+        [SerializeField] private float _swimStartDepth = 1.25f;
+        [Tooltip("Profondeur des pieds quand le corps flotte en surface (plus petit = corps plus haut).")]
+        [SerializeField] private float _swimBodyDepth = 0.35f;
+        [SerializeField] private float _swimSpeed = 2.0f;
+        [SerializeField] private float _swimSprintSpeed = 3.2f;
+
         [Header("Rotation du corps (tête découplée)")]
         [Tooltip("Angle max que le regard peut tourner avant que le corps suive (à l'arrêt).")]
         [SerializeField] private float _maxHeadYaw = 70f;
@@ -55,9 +64,12 @@ namespace Game.Player
 
         // --- État exposé (caméra, animator, vitals, réseau) ---
         public bool IsOwner => _isOwner;
+        /// <summary>Nage en surface (plus pied). Placeholder anim : traité comme "au sol".</summary>
+        public bool IsSwimming { get; private set; }
         // Anti-rebond : l'isGrounded du CharacterController clignote ; on garde "au sol" un court
         // délai (lisse l'anim de chute). Les remotes utilisent l'état réseau tel quel.
-        public bool IsGrounded => _isOwner ? (_grounded || (Time.time - _lastGroundedTime) <= 0.12f) : _grounded;
+        // En nage : "au sol" pour l'animator/le réseau (évite l'anim de chute en attendant le clip Swim).
+        public bool IsGrounded => IsSwimming || (_isOwner ? (_grounded || (Time.time - _lastGroundedTime) <= 0.12f) : _grounded);
         public bool IsSprinting { get; private set; }
         public float WalkSpeed => _walkSpeed;
         /// <summary>Orientation du corps = orientation du regard (FPS).</summary>
@@ -78,11 +90,12 @@ namespace Game.Player
             if (_input != null) _input.enabled = owner;
         }
 
-        /// <summary>Remote : impose le transform interpolé (position + yaw) + l'état sol (pour l'anim).</summary>
-        public void ApplyNetworkTransform(Vector3 position, float bodyYaw, Vector3 velocity, bool grounded)
+        /// <summary>Remote : impose le transform interpolé (position + yaw) + les états (pour l'anim).</summary>
+        public void ApplyNetworkTransform(Vector3 position, float bodyYaw, Vector3 velocity, bool grounded, bool swimming = false)
         {
             _netVelocity = velocity;
             _grounded = grounded;
+            IsSwimming = swimming;
             transform.SetPositionAndRotation(position, Quaternion.Euler(0f, bodyYaw, 0f));
         }
 
@@ -106,7 +119,55 @@ namespace Game.Player
             _grounded = _cc.isGrounded;
             if (_grounded) _lastGroundedTime = Time.time;
 
-            Move(dt);
+            UpdateSwimState();
+            if (IsSwimming) MoveSwim(dt);
+            else Move(dt);
+        }
+
+        // Entrée : les pieds passent sous la profondeur "plus pied". Sortie : un fond praticable
+        // remonte à portée de pied sous le joueur (raycast — l'eau n'a pas de collider).
+        private void UpdateSwimState()
+        {
+            if (!IsSwimming)
+            {
+                if (transform.position.y < _waterLevel - _swimStartDepth)
+                    IsSwimming = true;
+            }
+            else
+            {
+                if (Physics.Raycast(transform.position + Vector3.up * 0.1f, Vector3.down, out RaycastHit hit,
+                                    _swimStartDepth + 0.3f, ~0, QueryTriggerInteraction.Ignore)
+                    && hit.point.y > _waterLevel - _swimStartDepth + 0.05f)
+                {
+                    IsSwimming = false;
+                    _verticalVel = 0f;
+                }
+            }
+        }
+
+        private void MoveSwim(float dt)
+        {
+            // Nage "à la caméra" : on n'avance QUE vers l'avant (pas de recul ni de strafe) ;
+            // on se dirige en tournant le regard, le corps reste aligné sur la caméra.
+            float forward = _input != null ? Mathf.Clamp01(_input.Move.y) : 0f;
+            bool moving = forward > 0.01f;
+
+            float lookYaw = _camera != null ? _camera.LookYaw : _bodyYaw;
+            Vector3 wishDir = Quaternion.Euler(0f, lookYaw, 0f) * Vector3.forward * forward;
+
+            TurnBody(true, lookYaw, dt); // toujours face au regard dans l'eau
+
+            bool wantSprint = _input != null && _input.SprintHeld;
+            IsSprinting = wantSprint && moving;
+            float speed = IsSprinting ? _swimSprintSpeed : _swimSpeed;
+            _horizontalVel = Vector3.MoveTowards(_horizontalVel, wishDir * speed, _acceleration * speed * 0.6f * dt);
+
+            // Flottaison : ressort doux vers la profondeur de nage (amorti, borné pour les plongeons).
+            float targetY = _waterLevel - _swimBodyDepth;
+            _verticalVel = Mathf.Clamp((targetY - transform.position.y) * 4f, -2f, 3f);
+
+            _jumpQueued = false; // pas de saut en nageant
+            _cc.Move((_horizontalVel + Vector3.up * _verticalVel) * dt);
         }
 
         private void Move(float dt)
@@ -119,14 +180,7 @@ namespace Game.Player
             Vector3 wishDir = Quaternion.Euler(0f, lookYaw, 0f) * new Vector3(input.x, 0f, input.y);
             if (wishDir.sqrMagnitude > 1f) wishDir.Normalize(); // diagonale = même vitesse que tout droit
 
-            // Tête découplée : le corps s'aligne au regard quand on bouge ; à l'arrêt il ne suit
-            // que si le regard dépasse l'angle naturel de la tête.
-            float delta = Mathf.DeltaAngle(_bodyYaw, lookYaw);
-            if (moving)
-                _bodyYaw = Mathf.MoveTowardsAngle(_bodyYaw, lookYaw, _bodyTurnSpeed * dt);
-            else if (Mathf.Abs(delta) > _maxHeadYaw)
-                _bodyYaw = Mathf.MoveTowardsAngle(_bodyYaw, lookYaw, Mathf.Abs(delta) - _maxHeadYaw);
-            transform.rotation = Quaternion.Euler(0f, _bodyYaw, 0f);
+            TurnBody(moving, lookYaw, dt);
 
             bool wantSprint = _input != null && _input.SprintHeld;
             IsSprinting = wantSprint && input.y > 0.1f && moving;
@@ -147,6 +201,18 @@ namespace Game.Player
             _verticalVel += _gravity * dt;
 
             _cc.Move((_horizontalVel + Vector3.up * _verticalVel) * dt);
+        }
+
+        // Tête découplée : le corps s'aligne au regard quand on bouge ; à l'arrêt il ne suit
+        // que si le regard dépasse l'angle naturel de la tête.
+        private void TurnBody(bool moving, float lookYaw, float dt)
+        {
+            float delta = Mathf.DeltaAngle(_bodyYaw, lookYaw);
+            if (moving)
+                _bodyYaw = Mathf.MoveTowardsAngle(_bodyYaw, lookYaw, _bodyTurnSpeed * dt);
+            else if (Mathf.Abs(delta) > _maxHeadYaw)
+                _bodyYaw = Mathf.MoveTowardsAngle(_bodyYaw, lookYaw, Mathf.Abs(delta) - _maxHeadYaw);
+            transform.rotation = Quaternion.Euler(0f, _bodyYaw, 0f);
         }
     }
 }

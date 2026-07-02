@@ -77,6 +77,13 @@ namespace Game.World
             mesh.uv = uvs;
             mesh.triangles = tris;
             mesh.RecalculateBounds();
+
+            // Le shader déplace les sommets (vagues) mais les bounds restent plats à y=0 → Unity
+            // culle le plan dès qu'on lève la caméra alors que les vagues sont encore visibles.
+            // On gonfle les bounds verticalement pour couvrir l'amplitude des vagues.
+            var b = mesh.bounds;
+            b.Expand(new Vector3(0f, 8f, 0f));
+            mesh.bounds = b;
             return mesh;
         }
     }

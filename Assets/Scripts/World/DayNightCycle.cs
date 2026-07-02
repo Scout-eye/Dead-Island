@@ -45,6 +45,8 @@ namespace Game.World
         [SerializeField] private Color _ambientNight = new Color(0.09f, 0.11f, 0.19f);
 
         private Light _moon;
+        private LensFlareComponentSRP _sunFlare;
+        private LensFlareComponentSRP _moonFlare;
         private float _time01;
 
         // Sauvegarde des RenderSettings pour les restaurer quand le monde est détruit
@@ -83,6 +85,8 @@ namespace Game.World
 
             EnsureSun();
             EnsureMoon();
+            _sunFlare = LensFlareUtil.Attach(_sun, 0.7f, new Color(1f, 0.9f, 0.75f));
+            _moonFlare = LensFlareUtil.Attach(_moon, 0.18f, new Color(0.75f, 0.8f, 1f));
 
             _prevAmbientMode = RenderSettings.ambientMode;
             _prevAmbientColor = RenderSettings.ambientLight;
@@ -126,6 +130,7 @@ namespace Game.World
                 _sun.color = Color.Lerp(_sunHorizon, _sunZenith, height);
                 _sun.enabled = _sun.intensity > 0.01f;
                 if (_moon != null) _moon.enabled = false;
+                SyncFlares();
 
                 RenderSettings.ambientLight = Color.Lerp(_ambientHorizon, _ambientDay, height);
             }
@@ -144,9 +149,18 @@ namespace Game.World
                     _moon.enabled = _moon.intensity > 0.01f;
                 }
 
+                SyncFlares();
+
                 // Fondu aube/crépuscule aux bords de la nuit, noir bleuté au cœur.
                 RenderSettings.ambientLight = Color.Lerp(_ambientHorizon, _ambientNight, Mathf.Pow(height, 0.5f));
             }
+        }
+
+        // Le flare ne doit se voir que quand sa lumière est allumée.
+        private void SyncFlares()
+        {
+            if (_sunFlare != null) _sunFlare.enabled = _sun != null && _sun.enabled;
+            if (_moonFlare != null) _moonFlare.enabled = _moon != null && _moon.enabled;
         }
 
         // --- Setup lumières ---

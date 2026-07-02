@@ -1,7 +1,9 @@
 {
     "name": "Game.World",
     "rootNamespace": "Game.World",
-    "references": [],
+    "references": [
+        "Unity.RenderPipelines.Core.Runtime"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
