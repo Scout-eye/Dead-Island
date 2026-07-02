@@ -35,7 +35,7 @@ namespace Game.Player
             _input = GetComponent<PlayerInputReader>();
             _inventory = GetComponent<PlayerInventory>();
             _animator = GetComponent<PlayerAnimator>();
-            _hand = FindBone("RightHand");
+            _hand = BoneUtils.Find(transform, "RightHand");
         }
 
         private void OnDisable() => SetTarget(null);
@@ -104,14 +104,5 @@ namespace Game.Player
             _busy = false;
         }
 
-        private Transform FindBone(string bone)
-        {
-            foreach (var t in GetComponentsInChildren<Transform>(true))
-            {
-                string n = t.name;
-                if (n == bone || n == "mixamorig:" + bone || n.EndsWith(":" + bone)) return t;
-            }
-            return null;
-        }
     }
 }

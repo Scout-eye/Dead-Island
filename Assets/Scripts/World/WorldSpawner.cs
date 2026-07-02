@@ -26,6 +26,7 @@ namespace Game.World
             islandGo.transform.localPosition = Vector3.zero;
 
             var island = islandGo.AddComponent<IslandGenerator>();
+            islandGo.AddComponent<GeneratedMeshCleanup>(); // libère le mesh à la destruction du monde
             island.GenerateOnStart = false;       // on pilote la génération nous-mêmes
             island.Generate(seed, players);
 

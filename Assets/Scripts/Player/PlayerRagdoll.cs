@@ -188,15 +188,7 @@ namespace Game.Player
             return v.y >= v.z ? 1 : 2;
         }
 
-        private Transform Find(string bone)
-        {
-            foreach (var t in GetComponentsInChildren<Transform>(true))
-            {
-                string n = t.name;
-                if (n == bone || n == "mixamorig:" + bone || n.EndsWith(":" + bone)) return t;
-            }
-            return null;
-        }
+        private Transform Find(string bone) => BoneUtils.Find(transform, bone);
 
         private void Disable<T>() where T : Behaviour
         {

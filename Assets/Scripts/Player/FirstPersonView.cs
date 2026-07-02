@@ -20,18 +20,8 @@ namespace Game.Player
             var controller = GetComponent<FirstPersonController>();
             if (controller != null && !controller.IsOwner) return; // distant : avatar entier visible
 
-            var head = FindBone(transform, _headBoneName);
+            var head = BoneUtils.Find(transform, _headBoneName);
             if (head != null) head.localScale = Vector3.zero; // cache le crâne en local
-        }
-
-        private static Transform FindBone(Transform root, string boneName)
-        {
-            foreach (var t in root.GetComponentsInChildren<Transform>(true))
-            {
-                string n = t.name;
-                if (n == boneName || n == "mixamorig:" + boneName || n.EndsWith(":" + boneName)) return t;
-            }
-            return null;
         }
     }
 }

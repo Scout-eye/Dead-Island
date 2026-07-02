@@ -74,7 +74,7 @@ namespace Game.Player
             if (TryGetComponent<Highlightable>(out var hl)) { hl.SetHighlighted(false); hl.enabled = false; }
 
             transform.SetParent(hand, false);
-            transform.localPosition = new Vector3(0.0213f, 0.1115f, 0.0639f);
+            transform.localPosition = PlayerHandItem.RightHandGrip;
             transform.localRotation = Quaternion.identity;
         }
 

@@ -18,9 +18,12 @@ namespace Game.Player
         [SerializeField] private Vector3 _viewEuler = Vector3.zero;
         [SerializeField] private float _viewScale = 1f;
 
+        /// <summary>Offset de prise dans la main droite (partagé avec WorldItem.AttachToHand).</summary>
+        public static readonly Vector3 RightHandGrip = new Vector3(0.0213f, 0.1115f, 0.0639f);
+
         [Header("Main (joueurs distants) — sur l'os")]
         [SerializeField] private string _handBoneName = "RightHand";
-        [SerializeField] private Vector3 _handPosition = new Vector3(0.0213f, 0.1115f, 0.0639f);
+        [SerializeField] private Vector3 _handPosition = RightHandGrip;
         [SerializeField] private Vector3 _handEuler = Vector3.zero;
         [SerializeField] private float _handScale = 1f;
 
@@ -87,7 +90,7 @@ namespace Game.Player
             }
             else
             {
-                _anchor = FindBone(_handBoneName);
+                _anchor = BoneUtils.Find(transform, _handBoneName);
                 _pos = _handPosition; _euler = _handEuler; _scale = _handScale;
             }
         }
@@ -143,14 +146,5 @@ namespace Game.Player
             foreach (var rb in _current.GetComponentsInChildren<Rigidbody>(true)) rb.isKinematic = true;
         }
 
-        private Transform FindBone(string bone)
-        {
-            foreach (var t in GetComponentsInChildren<Transform>(true))
-            {
-                string n = t.name;
-                if (n == bone || n == "mixamorig:" + bone || n.EndsWith(":" + bone)) return t;
-            }
-            return null;
-        }
     }
 }

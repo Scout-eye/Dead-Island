@@ -9,16 +9,24 @@ namespace Game.World
     /// </summary>
     public static class WaterPlane
     {
+        // Matériau partagé entre toutes les créations (évite d'en fuiter un par régénération).
+        private static Material _waterMaterial;
+
         public static GameObject Create(Vector3 center, float size, int subdivisions = 120)
         {
             var go = new GameObject("Water");
             go.transform.position = new Vector3(center.x, 0f, center.z);
 
             go.AddComponent<MeshFilter>().sharedMesh = BuildPlane(size, subdivisions);
+            go.AddComponent<GeneratedMeshCleanup>(); // libère le mesh à la destruction
 
             var mr = go.AddComponent<MeshRenderer>();
-            var shader = Shader.Find("DeadIsland/WaterURP");
-            if (shader != null) mr.sharedMaterial = new Material(shader);
+            if (_waterMaterial == null)
+            {
+                var shader = Shader.Find("DeadIsland/WaterURP");
+                if (shader != null) _waterMaterial = new Material(shader);
+            }
+            mr.sharedMaterial = _waterMaterial;
             mr.shadowCastingMode = ShadowCastingMode.Off;
             mr.receiveShadows = false;
             return go;
